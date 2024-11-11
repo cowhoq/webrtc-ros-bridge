@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"sync"
 
 	peerconnectionchannel "github.com/3DRX/webrtc-ros-bridge/peer_connection_channel"
 	signalingchannel "github.com/3DRX/webrtc-ros-bridge/signaling_channel"
@@ -13,20 +14,23 @@ func main() {
 	sdpChan := make(chan webrtc.SessionDescription)
 	sdpReplyChan := make(chan webrtc.SessionDescription)
 	candidateChan := make(chan webrtc.ICECandidateInit)
-	candidateToPeerChan := make(chan *webrtc.ICECandidate)
+	var candidatesMux sync.Mutex
+	pendingCandidates := make([]*webrtc.ICECandidate, 0)
 	flag.Parse()
 	sc := signalingchannel.InitSignalingChannel(
 		addr,
 		sdpChan,
 		sdpReplyChan,
 		candidateChan,
-		candidateToPeerChan,
+		pendingCandidates,
+		&candidatesMux,
 	)
 	pc := peerconnectionchannel.InitPeerConnectionChannel(
 		sdpChan,
 		sdpReplyChan,
 		candidateChan,
-		candidateToPeerChan,
+		pendingCandidates,
+		&candidatesMux,
 		sc.SignalCandidate,
 	)
 	go sc.Spin()

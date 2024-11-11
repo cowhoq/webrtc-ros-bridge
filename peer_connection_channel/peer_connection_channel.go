@@ -5,29 +5,30 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 
-	"github.com/pion/interceptor"
-	"github.com/pion/interceptor/pkg/intervalpli"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
 	"github.com/pion/webrtc/v4/pkg/media/ivfwriter"
 )
 
 type PeerConnectionChannel struct {
-	sdpChan             <-chan webrtc.SessionDescription
-	sdpReplyChan        chan<- webrtc.SessionDescription
-	candidateChan       <-chan webrtc.ICECandidateInit
-	candidateToPeerChan chan<- *webrtc.ICECandidate
-	peerConnection      *webrtc.PeerConnection
-	m                   *webrtc.MediaEngine
-	signalCandidate     func(c webrtc.ICECandidateInit) error
+	sdpChan           <-chan webrtc.SessionDescription
+	sdpReplyChan      chan<- webrtc.SessionDescription
+	candidateChan     <-chan webrtc.ICECandidateInit
+	pendingCandidates []*webrtc.ICECandidate
+	candidatesMux     *sync.Mutex
+	peerConnection    *webrtc.PeerConnection
+	m                 *webrtc.MediaEngine
+	signalCandidate   func(c webrtc.ICECandidateInit) error
 }
 
 func InitPeerConnectionChannel(
 	sdpChan chan webrtc.SessionDescription,
 	sdpReplyChan chan<- webrtc.SessionDescription,
 	candidateChan <-chan webrtc.ICECandidateInit,
-	candidateToPeer chan<- *webrtc.ICECandidate,
+	pendingCandidates []*webrtc.ICECandidate,
+	candidatesMux *sync.Mutex,
 	signalCandidate func(c webrtc.ICECandidateInit) error,
 ) *PeerConnectionChannel {
 	m := &webrtc.MediaEngine{}
@@ -54,16 +55,7 @@ func InitPeerConnectionChannel(
 	}, webrtc.RTPCodecTypeVideo); err != nil {
 		panic(err)
 	}
-	i := &interceptor.Registry{}
-	intervalPliFactory, err := intervalpli.NewReceiverInterceptor()
-	if err != nil {
-		panic(err)
-	}
-	i.Add(intervalPliFactory)
-	if err = webrtc.RegisterDefaultInterceptors(m, i); err != nil {
-		panic(err)
-	}
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithInterceptorRegistry(i))
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
@@ -76,13 +68,14 @@ func InitPeerConnectionChannel(
 		panic(err)
 	}
 	return &PeerConnectionChannel{
-		sdpChan:             sdpChan,
-		sdpReplyChan:        sdpReplyChan,
-		candidateChan:       candidateChan,
-		candidateToPeerChan: candidateToPeer,
-		peerConnection:      peerConnection,
-		m:                   m,
-		signalCandidate:     signalCandidate,
+		sdpChan:           sdpChan,
+		sdpReplyChan:      sdpReplyChan,
+		candidateChan:     candidateChan,
+		pendingCandidates: pendingCandidates,
+		candidatesMux:     candidatesMux,
+		peerConnection:    peerConnection,
+		m:                 m,
+		signalCandidate:   signalCandidate,
 	}
 }
 
@@ -103,12 +96,20 @@ func handleSignalingMessage(pc *PeerConnectionChannel) {
 			if err != nil {
 				panic(err)
 			}
+			pc.candidatesMux.Lock()
+			for _, c := range pc.pendingCandidates {
+				onICECandidateErr := pc.signalCandidate(c.ToJSON())
+				if onICECandidateErr != nil {
+					panic(onICECandidateErr)
+				}
+			}
+			pc.candidatesMux.Unlock()
 		case candidate := <-pc.candidateChan:
 			err := pc.peerConnection.AddICECandidate(candidate)
 			if err != nil {
 				panic(err)
 			}
-			slog.Info("received ICE candidate")
+			slog.Info("received ICE candidate", "candidate", candidate)
 		}
 	}
 }
@@ -146,10 +147,11 @@ func (pc *PeerConnectionChannel) Spin() {
 		if c == nil {
 			return
 		}
+		pc.candidatesMux.Lock()
+		defer pc.candidatesMux.Unlock()
 		desc := pc.peerConnection.RemoteDescription()
 		if desc == nil {
-			pc.candidateToPeerChan <- c
-			// TODO use array similar to example
+			pc.pendingCandidates = append(pc.pendingCandidates, c)
 		} else if err := pc.signalCandidate(c.ToJSON()); err != nil {
 			panic(err)
 		}

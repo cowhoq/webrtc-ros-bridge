@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/url"
 	"strconv"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
@@ -12,13 +13,14 @@ import (
 )
 
 type SignalingChannel struct {
-	addr                string
-	recv                chan []byte
-	c                   *websocket.Conn
-	sdpChan             chan<- webrtc.SessionDescription
-	sdpReplyChan        <-chan webrtc.SessionDescription
-	candidateChan       chan<- webrtc.ICECandidateInit
-	candidateToPeerChan <-chan *webrtc.ICECandidate
+	addr              string
+	recv              chan []byte
+	c                 *websocket.Conn
+	sdpChan           chan<- webrtc.SessionDescription
+	sdpReplyChan      <-chan webrtc.SessionDescription
+	candidateChan     chan<- webrtc.ICECandidateInit
+	pendingCandidates []*webrtc.ICECandidate
+	candidatesMux     *sync.Mutex
 }
 
 type signalingResponse struct {
@@ -26,21 +28,30 @@ type signalingResponse struct {
 	Type string
 }
 
+type ICECandidateJSON struct {
+	Candidate     string `json:"candidate"`
+	SDPMid        string `json:"sdp_mid"`
+	SDPMLineIndex uint16 `json:"sdp_mline_index"`
+	Type          string `json:"type"`
+}
+
 func InitSignalingChannel(
 	addr *string,
 	sdpChan chan webrtc.SessionDescription,
 	sdpReplyChan <-chan webrtc.SessionDescription,
 	candidateChan chan<- webrtc.ICECandidateInit,
-	candidateToPeerChan <-chan *webrtc.ICECandidate,
+	pendingCandidates []*webrtc.ICECandidate,
+	candidatesMux *sync.Mutex,
 ) *SignalingChannel {
 	return &SignalingChannel{
-		addr:                *addr,
-		recv:                make(chan []byte),
-		c:                   nil,
-		sdpChan:             sdpChan,
-		sdpReplyChan:        sdpReplyChan,
-		candidateChan:       candidateChan,
-		candidateToPeerChan: candidateToPeerChan,
+		addr:              *addr,
+		recv:              make(chan []byte),
+		c:                 nil,
+		sdpChan:           sdpChan,
+		sdpReplyChan:      sdpReplyChan,
+		candidateChan:     candidateChan,
+		pendingCandidates: pendingCandidates,
+		candidatesMux:     candidatesMux,
 	}
 }
 
@@ -138,19 +149,19 @@ func (s *SignalingChannel) Spin() {
 	c.WriteMessage(websocket.TextMessage, payload)
 	slog.Info("send answer")
 	for {
-		select {
-		case candidateRaw := <-s.recv:
-			iceCandidate := webrtc.ICECandidateInit{
-				Candidate: string(candidateRaw),
-			}
-			s.candidateChan <- iceCandidate
-		case candidate := <-s.candidateToPeerChan:
-			if candidate == nil {
-				slog.Info("nil candidate")
-				continue
-			}
-			candidateJSON := candidate.ToJSON()
-			s.SignalCandidate(candidateJSON)
+		candidateRaw := <-s.recv
+		candidateJSON := ICECandidateJSON{}
+		err := json.Unmarshal(candidateRaw, &candidateJSON)
+		if err != nil {
+			slog.Error("unmarshal error", "error", err)
+			continue
 		}
+		slog.Info("recv candidate", "candidate", candidateJSON)
+		iceCandidate := webrtc.ICECandidateInit{
+			Candidate:     candidateJSON.Candidate,
+			// SDPMid:        &candidateJSON.SDPMid,
+			SDPMLineIndex: &candidateJSON.SDPMLineIndex,
+		}
+		s.candidateChan <- iceCandidate
 	}
 }
