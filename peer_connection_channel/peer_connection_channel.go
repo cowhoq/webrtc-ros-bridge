@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 
 	"github.com/pion/interceptor"
 	"github.com/pion/interceptor/pkg/intervalpli"
@@ -15,24 +14,43 @@ import (
 )
 
 type PeerConnectionChannel struct {
-	sdpChan             chan webrtc.SessionDescription
-	candidateChan       chan webrtc.ICECandidateInit
-	candidateToPeerChan chan *webrtc.ICECandidate
-	candidateMux        *sync.Mutex
+	sdpChan             <-chan webrtc.SessionDescription
+	sdpReplyChan        chan<- webrtc.SessionDescription
+	candidateChan       <-chan webrtc.ICECandidateInit
+	candidateToPeerChan chan<- *webrtc.ICECandidate
 	peerConnection      *webrtc.PeerConnection
 	m                   *webrtc.MediaEngine
+	signalCandidate     func(c webrtc.ICECandidateInit) error
 }
 
 func InitPeerConnectionChannel(
 	sdpChan chan webrtc.SessionDescription,
-	candidateChan chan webrtc.ICECandidateInit,
-	candidateToPeer chan *webrtc.ICECandidate,
-	candidateMux *sync.Mutex,
+	sdpReplyChan chan<- webrtc.SessionDescription,
+	candidateChan <-chan webrtc.ICECandidateInit,
+	candidateToPeer chan<- *webrtc.ICECandidate,
+	signalCandidate func(c webrtc.ICECandidateInit) error,
 ) *PeerConnectionChannel {
 	m := &webrtc.MediaEngine{}
+	// Register VP8
 	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, Channels: 0, SDPFmtpLine: "", RTCPFeedback: nil},
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP8, ClockRate: 90000, Channels: 0},
 		PayloadType:        96,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		panic(err)
+	}
+
+	// Register VP9
+	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP9, ClockRate: 90000, Channels: 0},
+		PayloadType:        98,
+	}, webrtc.RTPCodecTypeVideo); err != nil {
+		panic(err)
+	}
+
+	// Register H264
+	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
+		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000, Channels: 0},
+		PayloadType:        102,
 	}, webrtc.RTPCodecTypeVideo); err != nil {
 		panic(err)
 	}
@@ -58,11 +76,13 @@ func InitPeerConnectionChannel(
 		panic(err)
 	}
 	return &PeerConnectionChannel{
-		sdpChan:        sdpChan,
-		candidateChan:  candidateChan,
-		candidateMux:   candidateMux,
-		peerConnection: peerConnection,
-		m:              m,
+		sdpChan:             sdpChan,
+		sdpReplyChan:        sdpReplyChan,
+		candidateChan:       candidateChan,
+		candidateToPeerChan: candidateToPeer,
+		peerConnection:      peerConnection,
+		m:                   m,
+		signalCandidate:     signalCandidate,
 	}
 }
 
@@ -78,19 +98,17 @@ func handleSignalingMessage(pc *PeerConnectionChannel) {
 			if err != nil {
 				panic(err)
 			}
-			gatherComplete := webrtc.GatheringCompletePromise(pc.peerConnection)
+			pc.sdpReplyChan <- answer
 			err = pc.peerConnection.SetLocalDescription(answer)
 			if err != nil {
 				panic(err)
 			}
-			<-gatherComplete
-			pc.sdpChan <- answer
 		case candidate := <-pc.candidateChan:
 			err := pc.peerConnection.AddICECandidate(candidate)
 			if err != nil {
 				panic(err)
 			}
-			slog.Info("PeerConnectionChannel: received ICE candidate", "candidate", candidate)
+			slog.Info("received ICE candidate")
 		}
 	}
 }
@@ -128,7 +146,13 @@ func (pc *PeerConnectionChannel) Spin() {
 		if c == nil {
 			return
 		}
-		pc.candidateToPeerChan <- c
+		desc := pc.peerConnection.RemoteDescription()
+		if desc == nil {
+			pc.candidateToPeerChan <- c
+			// TODO use array similar to example
+		} else if err := pc.signalCandidate(c.ToJSON()); err != nil {
+			panic(err)
+		}
 	})
 	pc.peerConnection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		slog.Info("PeerConnectionChannel: connection state changed", "state", state)
@@ -158,10 +182,14 @@ func (pc *PeerConnectionChannel) Spin() {
 		slog.Info("PeerConnectionChannel: signaling state changed", "state", state)
 	})
 	pc.peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		fmt.Printf("Connection State has changed %s \n", connectionState.String())
+		slog.Info("ICE Connection State changed",
+			"state", connectionState,
+			"signalingState", pc.peerConnection.SignalingState(),
+			"connectionState", pc.peerConnection.ConnectionState(),
+		)
 
 		if connectionState == webrtc.ICEConnectionStateConnected {
-			fmt.Println("Ctrl+C the remote client to stop the demo")
+			slog.Info("Ctrl+C the remote client to stop the demo")
 		} else if connectionState == webrtc.ICEConnectionStateFailed || connectionState == webrtc.ICEConnectionStateClosed {
 			if closeErr := ivfFile.Close(); closeErr != nil {
 				panic(closeErr)
