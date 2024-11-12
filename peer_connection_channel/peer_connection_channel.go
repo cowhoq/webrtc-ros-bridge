@@ -23,6 +23,21 @@ type PeerConnectionChannel struct {
 	signalCandidate   func(c webrtc.ICECandidateInit) error
 }
 
+func registerHeaderExtensionURI(m *webrtc.MediaEngine, uris []string) {
+	for _, uri := range uris {
+		err := m.RegisterHeaderExtension(
+			webrtc.RTPHeaderExtensionCapability{
+				URI: uri,
+			},
+			webrtc.RTPCodecTypeVideo,
+			webrtc.RTPTransceiverDirectionRecvonly,
+		)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
 func InitPeerConnectionChannel(
 	sdpChan chan webrtc.SessionDescription,
 	sdpReplyChan chan<- webrtc.SessionDescription,
@@ -55,6 +70,21 @@ func InitPeerConnectionChannel(
 	}, webrtc.RTPCodecTypeVideo); err != nil {
 		panic(err)
 	}
+
+	if err := m.RegisterDefaultCodecs(); err != nil {
+		panic(err)
+	}
+
+	registerHeaderExtensionURI(m, []string{
+		"urn:ietf:params:rtp-hdrext:toffset",
+		"http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+		"urn:3gpp:video-orientation",
+		"http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01",
+		"http://www.webrtc.org/experiments/rtp-hdrext/playout-delay",
+		"http://www.webrtc.org/experiments/rtp-hdrext/video-content-type",
+		"http://www.webrtc.org/experiments/rtp-hdrext/video-timing",
+		"http://www.webrtc.org/experiments/rtp-hdrext/color-space",
+	})
 	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
@@ -83,6 +113,7 @@ func handleSignalingMessage(pc *PeerConnectionChannel) {
 	for {
 		select {
 		case sdp := <-pc.sdpChan:
+			slog.Info("received SDP", "sdp", sdp.SDP)
 			err := pc.peerConnection.SetRemoteDescription(sdp)
 			if err != nil {
 				panic(err)
@@ -135,7 +166,11 @@ func saveToDisk(i media.Writer, track *webrtc.TrackRemote) {
 }
 
 func (pc *PeerConnectionChannel) Spin() {
-	_, err := pc.peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo)
+	_, err := pc.peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo,
+		webrtc.RTPTransceiverInit{
+			Direction: webrtc.RTPTransceiverDirectionRecvonly,
+		},
+	)
 	if err != nil {
 		panic(err)
 	}
