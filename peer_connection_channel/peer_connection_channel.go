@@ -191,88 +191,161 @@ func (pc *PeerConnectionChannel) Spin() {
 	})
 	pc.peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		slog.Info("PeerConnectionChannel: received track", "track", track)
-		// Create a VP8 codec context
+
+		if track.Codec().MimeType != webrtc.MimeTypeVP8 {
+			slog.Info("Ignoring non-VP8 track", "mimeType", track.Codec().MimeType)
+			return
+		}
+
 		width, height := C.uint(640), C.uint(480)
 		var codec C.vpx_codec_ctx_t
 		if C.init_decoder(&codec, width, height) != 0 {
-			fmt.Println("Failed to initialize decoder")
+			slog.Error("Failed to initialize decoder")
 			return
 		}
+		// defer C.vpx_codec_destroy(&codec)
+		slog.Info("Decoder initialized successfully", "width", width, "height", height)
+
 		currentFrame := []byte{}
 		seenKeyFrame := false
 		frameCount := 0
+		var lastSequenceNumber uint16
+
 		for {
 			packet, _, err := track.ReadRTP()
 			if err != nil {
-				fmt.Println("Error reading RTP:", err)
+				slog.Error("Error reading RTP", "error", err)
 				break
 			}
+
+			// Handle packet loss
+			if lastSequenceNumber != 0 {
+				diff := packet.SequenceNumber - lastSequenceNumber
+				if diff > 1 {
+					slog.Warn("Packet loss detected",
+						"expected", lastSequenceNumber+1,
+						"got", packet.SequenceNumber,
+					)
+					currentFrame = nil
+					continue
+				}
+			}
+			lastSequenceNumber = packet.SequenceNumber
+
 			vp8Packet := codecs.VP8Packet{}
 			if _, err := vp8Packet.Unmarshal(packet.Payload); err != nil {
-				panic(err)
-			}
-			isKeyFrame := vp8Packet.Payload[0] & 0x01
-			switch {
-			case !seenKeyFrame && isKeyFrame == 1:
-				continue
-			case currentFrame == nil && vp8Packet.S != 1:
+				slog.Error("Failed to unmarshal VP8 packet", "error", err)
 				continue
 			}
-			seenKeyFrame = true
-			currentFrame = append(currentFrame, vp8Packet.Payload[0:]...)
 
+			// Ensure we have at least one byte
+			if len(vp8Packet.Payload) == 0 {
+				continue
+			}
+
+			isKeyFrame := (vp8Packet.Payload[0] & 0x01) == 0
+
+			// Wait for keyframe if we haven't seen one
+			if !seenKeyFrame {
+				if !isKeyFrame {
+					continue
+				}
+				seenKeyFrame = true
+				slog.Info("First keyframe received")
+			}
+
+			// Skip if we're waiting for start of frame
+			if currentFrame == nil && vp8Packet.S != 1 {
+				continue
+			}
+
+			// For debugging first few frames
+			if frameCount < 5 && vp8Packet.S == 1 {
+				slog.Debug("New frame starting",
+					"frameCount", frameCount,
+					"keyframe", isKeyFrame,
+					"payloadSize", len(vp8Packet.Payload),
+					"firstByte", fmt.Sprintf("%08b", vp8Packet.Payload[0]))
+			}
+
+			currentFrame = append(currentFrame, vp8Packet.Payload...)
+
+			// Continue if not end of frame
 			if !packet.Marker {
 				continue
-			} else if len(currentFrame) == 0 {
+			}
+
+			// Skip empty frames
+			if len(currentFrame) == 0 {
+				currentFrame = nil
 				continue
 			}
 
-			// Start decoding
-			// Decode the VP8 payload
+			// Debug logging for first few frames
+			if frameCount < 5 {
+				slog.Debug("Complete frame",
+					"frameCount", frameCount,
+					"size", len(currentFrame),
+					"prefix", fmt.Sprintf("%x", currentFrame[:min(len(currentFrame), 16)]))
+			}
+
+			// Decode VP8 frame
 			codecError := C.decode_frame(&codec, (*C.uint8_t)(&currentFrame[0]), C.size_t(len(currentFrame)))
 			if codecError != 0 {
-				slog.Error("Failed to decode frame", "errorCode", codecError)
+				slog.Error("Decode error", "errorCode", codecError)
+				currentFrame = nil
 				continue
 			}
-			slog.Info("Current frame size", "size", len(currentFrame))
 
+			// Get decoded frames
 			var iter C.vpx_codec_iter_t
-			for img := C.vpx_codec_get_frame(&codec, &iter); img != nil; img = C.vpx_codec_get_frame(&codec, &iter) {
-				slog.Info("Retrieved frame", "width", img.d_w, "height", img.d_h)
-
-				// Create GoCV Mat with the correct size and type
-				goImg := gocv.NewMatWithSize(int(img.d_h), int(img.d_w), gocv.MatTypeCV8UC3)
-				if goImg.Empty() {
-					slog.Error("Failed to create Mat")
-					continue
-				}
-				defer goImg.Close()
-
-				// Get pointer to Mat data
-				goImgPtr, err := goImg.DataPtrUint8()
-				if err != nil {
-					slog.Error("Failed to get Mat data pointer", "error", err)
-					continue
-				}
-
-				// Copy and convert frame data from YUV to BGR
-				C.copy_frame_to_mat(
-					img,
-					(*C.uchar)(unsafe.Pointer(&goImgPtr[0])),
-					img.d_w,
-					img.d_h,
-				)
-
-				// Save the frame as JPEG
-				filename := fmt.Sprintf("frame_%d.jpg", frameCount)
-				if ok := gocv.IMWrite(filename, goImg); !ok {
-					slog.Error("Failed to write image", "filename", filename)
-				} else {
-					slog.Info("Saved frame", "filename", filename)
-				}
-
-				frameCount++
+			img := C.vpx_codec_get_frame(&codec, &iter)
+			if img == nil {
+				slog.Error("Failed to get decoded frame")
+				currentFrame = nil
+				continue
 			}
+
+			actualWidth := int(img.d_w)
+			actualHeight := int(img.d_h)
+
+			// Create GoCV Mat
+			goImg := gocv.NewMatWithSize(actualHeight, actualWidth, gocv.MatTypeCV8UC3)
+			if goImg.Empty() {
+				slog.Error("Failed to create Mat")
+				currentFrame = nil
+				continue
+			}
+			defer goImg.Close()
+
+			// Get Mat data pointer
+			goImgPtr, err := goImg.DataPtrUint8()
+			if err != nil {
+				slog.Error("Failed to get Mat data pointer", "error", err)
+				currentFrame = nil
+				continue
+			}
+
+			// Convert YUV to BGR
+			C.copy_frame_to_mat(
+				img,
+				(*C.uchar)(unsafe.Pointer(&goImgPtr[0])),
+				C.uint(actualWidth),
+				C.uint(actualHeight),
+			)
+
+			// Save frame
+			filename := fmt.Sprintf("frame_%d.jpg", frameCount)
+			if ok := gocv.IMWrite(filename, goImg); !ok {
+				slog.Error("Failed to write image", "filename", filename)
+			} else {
+				slog.Info("Saved frame",
+					"filename", filename,
+					"width", actualWidth,
+					"height", actualHeight)
+			}
+
+			frameCount++
 			currentFrame = nil
 		}
 	})
