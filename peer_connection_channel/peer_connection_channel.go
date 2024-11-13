@@ -1,15 +1,21 @@
 package peerconnectionchannel
 
+/*
+#cgo LDFLAGS: -L. -lvp8decoder -lvpx -lm
+#include "vp8_decoder.h"
+*/
+import "C"
+
 import (
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 	"sync"
 
+	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
-	"github.com/pion/webrtc/v4/pkg/media"
-	"github.com/pion/webrtc/v4/pkg/media/ivfwriter"
+	"gocv.io/x/gocv"
 )
 
 type PeerConnectionChannel struct {
@@ -145,36 +151,12 @@ func handleSignalingMessage(pc *PeerConnectionChannel) {
 	}
 }
 
-func saveToDisk(i media.Writer, track *webrtc.TrackRemote) {
-	defer func() {
-		if err := i.Close(); err != nil {
-			panic(err)
-		}
-	}()
-
-	for {
-		rtpPacket, _, err := track.ReadRTP()
-		if err != nil {
-			slog.Error(err.Error())
-			return
-		}
-		if err := i.WriteRTP(rtpPacket); err != nil {
-			slog.Error(err.Error())
-			return
-		}
-	}
-}
-
 func (pc *PeerConnectionChannel) Spin() {
 	_, err := pc.peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo,
 		webrtc.RTPTransceiverInit{
 			Direction: webrtc.RTPTransceiverDirectionRecvonly,
 		},
 	)
-	if err != nil {
-		panic(err)
-	}
-	ivfFile, err := ivfwriter.New("output.ivf")
 	if err != nil {
 		panic(err)
 	}
@@ -209,10 +191,75 @@ func (pc *PeerConnectionChannel) Spin() {
 	})
 	pc.peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		slog.Info("PeerConnectionChannel: received track", "track", track)
-		codec := track.Codec()
-		if strings.EqualFold(codec.MimeType, webrtc.MimeTypeVP8) {
-			fmt.Println("Got VP8 track, saving to disk as output.ivf")
-			saveToDisk(ivfFile, track)
+		// Create a VP8 codec context
+		width, height := C.uint(640), C.uint(480)
+		var codec C.vpx_codec_ctx_t
+		if C.init_decoder(&codec, width, height) != 0 {
+			fmt.Println("Failed to initialize decoder")
+			return
+		}
+		currentFrame := []byte{}
+		seenKeyFrame := false
+		count := uint64(0)
+		for {
+			packet, _, err := track.ReadRTP()
+			if err != nil {
+				fmt.Println("Error reading RTP:", err)
+				break
+			}
+			vp8Packet := codecs.VP8Packet{}
+			if _, err := vp8Packet.Unmarshal(packet.Payload); err != nil {
+				panic(err)
+			}
+			isKeyFrame := vp8Packet.Payload[0] & 0x01
+			switch {
+			case !seenKeyFrame && isKeyFrame == 1:
+				continue
+			case currentFrame == nil && vp8Packet.S != 1:
+				continue
+			}
+			seenKeyFrame = true
+			currentFrame = append(currentFrame, vp8Packet.Payload[0:]...)
+
+			if !packet.Marker {
+				continue
+			} else if len(currentFrame) == 0 {
+				continue
+			}
+
+			// Start decoding
+			// assemble frame data
+			frameHeader := make([]byte, 12)
+			binary.LittleEndian.PutUint32(frameHeader[0:], uint32(len(currentFrame)))       // Frame length
+			binary.LittleEndian.PutUint64(frameHeader[4:], uint64(packet.Header.Timestamp)) // PTS
+			count++
+
+			frameData := append(frameHeader, currentFrame...)
+
+			// Decode the VP8 payload
+			if C.decode_frame(&codec, (*C.uint8_t)(&frameData[0]), C.size_t(len(frameData))) != 0 {
+				fmt.Println("Failed to decode frame")
+				continue
+			}
+
+			// Get the decoded frame
+			img := C.get_frame(&codec)
+			if img == nil {
+				continue
+			}
+
+			fmt.Println("decode frame success")
+
+			currentFrame = nil
+
+			// Convert C image to GoCV Mat
+			goImg := gocv.NewMatWithSize(int(img.d_h), int(img.d_w), gocv.MatTypeCV8UC3)
+			// Assume we copy the data to goImg here
+
+			// Display the image
+			window := gocv.NewWindow("WebRTC VP8 Video")
+			window.IMShow(goImg)
+			window.WaitKey(1)
 		}
 	})
 	pc.peerConnection.OnSignalingStateChange(func(state webrtc.SignalingState) {
@@ -228,10 +275,6 @@ func (pc *PeerConnectionChannel) Spin() {
 		if connectionState == webrtc.ICEConnectionStateConnected {
 			slog.Info("Ctrl+C the remote client to stop the demo")
 		} else if connectionState == webrtc.ICEConnectionStateFailed || connectionState == webrtc.ICEConnectionStateClosed {
-			if closeErr := ivfFile.Close(); closeErr != nil {
-				panic(closeErr)
-			}
-			slog.Info("Done writing media files")
 			// Gracefully shutdown the peer connection
 			if closeErr := pc.peerConnection.Close(); closeErr != nil {
 				panic(closeErr)
