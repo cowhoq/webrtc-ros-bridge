@@ -13,6 +13,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/pion/interceptor"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
 	"gocv.io/x/gocv"
@@ -91,7 +92,13 @@ func InitPeerConnectionChannel(
 		"http://www.webrtc.org/experiments/rtp-hdrext/video-timing",
 		"http://www.webrtc.org/experiments/rtp-hdrext/color-space",
 	})
-	api := webrtc.NewAPI(webrtc.WithMediaEngine(m))
+
+	i := &interceptor.Registry{}
+	// Use the default set of interceptors
+	if err := webrtc.RegisterDefaultInterceptors(m, i); err != nil {
+		panic(err)
+	}
+	api := webrtc.NewAPI(webrtc.WithMediaEngine(m), webrtc.WithInterceptorRegistry(i))
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
 			{
