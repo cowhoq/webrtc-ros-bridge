@@ -7,11 +7,11 @@ package peerconnectionchannel
 import "C"
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"os"
 	"sync"
+	"unsafe"
 
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4"
@@ -200,7 +200,7 @@ func (pc *PeerConnectionChannel) Spin() {
 		}
 		currentFrame := []byte{}
 		seenKeyFrame := false
-		count := uint64(0)
+		frameCount := 0
 		for {
 			packet, _, err := track.ReadRTP()
 			if err != nil {
@@ -228,38 +228,52 @@ func (pc *PeerConnectionChannel) Spin() {
 			}
 
 			// Start decoding
-			// assemble frame data
-			frameHeader := make([]byte, 12)
-			binary.LittleEndian.PutUint32(frameHeader[0:], uint32(len(currentFrame)))       // Frame length
-			binary.LittleEndian.PutUint64(frameHeader[4:], uint64(packet.Header.Timestamp)) // PTS
-			count++
-
-			frameData := append(frameHeader, currentFrame...)
-
 			// Decode the VP8 payload
-			if C.decode_frame(&codec, (*C.uint8_t)(&frameData[0]), C.size_t(len(frameData))) != 0 {
-				fmt.Println("Failed to decode frame")
+			codecError := C.decode_frame(&codec, (*C.uint8_t)(&currentFrame[0]), C.size_t(len(currentFrame)))
+			if codecError != 0 {
+				slog.Error("Failed to decode frame", "errorCode", codecError)
 				continue
 			}
+			slog.Info("Current frame size", "size", len(currentFrame))
 
-			// Get the decoded frame
-			img := C.get_frame(&codec)
-			if img == nil {
-				continue
+			var iter C.vpx_codec_iter_t
+			for img := C.vpx_codec_get_frame(&codec, &iter); img != nil; img = C.vpx_codec_get_frame(&codec, &iter) {
+				slog.Info("Retrieved frame", "width", img.d_w, "height", img.d_h)
+
+				// Create GoCV Mat with the correct size and type
+				goImg := gocv.NewMatWithSize(int(img.d_h), int(img.d_w), gocv.MatTypeCV8UC3)
+				if goImg.Empty() {
+					slog.Error("Failed to create Mat")
+					continue
+				}
+				defer goImg.Close()
+
+				// Get pointer to Mat data
+				goImgPtr, err := goImg.DataPtrUint8()
+				if err != nil {
+					slog.Error("Failed to get Mat data pointer", "error", err)
+					continue
+				}
+
+				// Copy and convert frame data from YUV to BGR
+				C.copy_frame_to_mat(
+					img,
+					(*C.uchar)(unsafe.Pointer(&goImgPtr[0])),
+					img.d_w,
+					img.d_h,
+				)
+
+				// Save the frame as JPEG
+				filename := fmt.Sprintf("frame_%d.jpg", frameCount)
+				if ok := gocv.IMWrite(filename, goImg); !ok {
+					slog.Error("Failed to write image", "filename", filename)
+				} else {
+					slog.Info("Saved frame", "filename", filename)
+				}
+
+				frameCount++
 			}
-
-			fmt.Println("decode frame success")
-
 			currentFrame = nil
-
-			// Convert C image to GoCV Mat
-			goImg := gocv.NewMatWithSize(int(img.d_h), int(img.d_w), gocv.MatTypeCV8UC3)
-			// Assume we copy the data to goImg here
-
-			// Display the image
-			window := gocv.NewWindow("WebRTC VP8 Video")
-			window.IMShow(goImg)
-			window.WaitKey(1)
 		}
 	})
 	pc.peerConnection.OnSignalingStateChange(func(state webrtc.SignalingState) {

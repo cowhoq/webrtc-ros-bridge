@@ -8,5 +8,7 @@
 int init_decoder(vpx_codec_ctx_t *codec, unsigned int w, unsigned int h);
 int decode_frame(vpx_codec_ctx_t *codec, const uint8_t *data, size_t data_size);
 vpx_image_t *get_frame(vpx_codec_ctx_t *codec);
+void copy_frame_to_mat(vpx_image_t *img, unsigned char *dest,
+                       unsigned int width, unsigned int height);
 
 #endif // VPX_DECODER_H_
