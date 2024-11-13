@@ -29,33 +29,33 @@ vpx_image_t *get_frame(vpx_codec_ctx_t *codec) {
 // Function to copy the decoded frame to a GoCV Mat
 void copy_frame_to_mat(vpx_image_t *img, unsigned char *dest,
                        unsigned int width, unsigned int height) {
-  // Assuming img->planes[0] contains the Y plane data (for YUV format)
-  // and we are converting it to a BGR format for GoCV
+  for (int y = 0; y < height; y++) {
+    for (int x = 0; x < width; x++) {
+      // Calculate correct indices using strides
+      int y_idx = y * img->stride[VPX_PLANE_Y] + x;
+      int u_idx = (y >> 1) * img->stride[VPX_PLANE_U] + (x >> 1);
+      int v_idx = (y >> 1) * img->stride[VPX_PLANE_V] + (x >> 1);
 
-  int y_index = 0;
-  int uv_index = 0;
-  for (int j = 0; j < height; j++) {
-    for (int i = 0; i < width; i++) {
-      // Y value
-      unsigned char Y = img->planes[VPX_PLANE_Y][y_index];
-      // U and V values (assuming they are subsampled)
-      unsigned char U = img->planes[VPX_PLANE_U][uv_index];
-      unsigned char V = img->planes[VPX_PLANE_V][uv_index];
+      // Get YUV values
+      int Y = img->planes[VPX_PLANE_Y][y_idx];
+      int U = img->planes[VPX_PLANE_U][u_idx] - 128;
+      int V = img->planes[VPX_PLANE_V][v_idx] - 128;
 
-      // Convert YUV to BGR
-      unsigned char B = Y + 1.772 * (U - 128);
-      unsigned char G = Y - 0.344136 * (U - 128) - 0.714136 * (V - 128);
-      unsigned char R = Y + 1.402 * (V - 128);
+      // YUV to RGB conversion with proper coefficients
+      int R = Y + (1.403 * V);
+      int G = Y - (0.344 * U) - (0.714 * V);
+      int B = Y + (1.770 * U);
 
-      // Store in the destination array (BGR format)
-      dest[(j * width + i) * 3 + 0] = B; // B
-      dest[(j * width + i) * 3 + 1] = G; // G
-      dest[(j * width + i) * 3 + 2] = R; // R
+      // Clamp values to [0, 255]
+      R = R < 0 ? 0 : (R > 255 ? 255 : R);
+      G = G < 0 ? 0 : (G > 255 ? 255 : G);
+      B = B < 0 ? 0 : (B > 255 ? 255 : B);
 
-      y_index++;
-      if (i % 2 == 0 && j % 2 == 0) {
-        uv_index++; // Increment UV index for subsampling
-      }
+      // Write to destination in BGR order
+      int dest_idx = (y * width + x) * 3;
+      dest[dest_idx + 0] = (unsigned char)B;
+      dest[dest_idx + 1] = (unsigned char)G;
+      dest[dest_idx + 2] = (unsigned char)R;
     }
   }
 }
