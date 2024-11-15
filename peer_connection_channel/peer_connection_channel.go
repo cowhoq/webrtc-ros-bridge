@@ -1,22 +1,16 @@
 package peerconnectionchannel
 
-/*
-#cgo LDFLAGS: -L. -lvp8decoder -lvpx -lm
-#include "vp8_decoder.h"
-*/
-import "C"
-
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"sync"
-	"unsafe"
+	"time"
 
 	"github.com/pion/interceptor"
-	"github.com/pion/rtp/codecs"
+	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
-	"gocv.io/x/gocv"
 )
 
 type PeerConnectionChannel struct {
@@ -28,6 +22,7 @@ type PeerConnectionChannel struct {
 	peerConnection    *webrtc.PeerConnection
 	m                 *webrtc.MediaEngine
 	signalCandidate   func(c webrtc.ICECandidateInit) error
+	ffmpegIn          io.WriteCloser
 }
 
 func registerHeaderExtensionURI(m *webrtc.MediaEngine, uris []string) {
@@ -52,6 +47,7 @@ func InitPeerConnectionChannel(
 	pendingCandidates []*webrtc.ICECandidate,
 	candidatesMux *sync.Mutex,
 	signalCandidate func(c webrtc.ICECandidateInit) error,
+	ffmpegIn io.WriteCloser,
 ) *PeerConnectionChannel {
 	m := &webrtc.MediaEngine{}
 	// Register VP8
@@ -119,6 +115,7 @@ func InitPeerConnectionChannel(
 		peerConnection:    peerConnection,
 		m:                 m,
 		signalCandidate:   signalCandidate,
+		ffmpegIn:          ffmpegIn,
 	}
 }
 
@@ -159,6 +156,11 @@ func handleSignalingMessage(pc *PeerConnectionChannel) {
 }
 
 func (pc *PeerConnectionChannel) Spin() {
+	// ivfWriter, err := ivfwriter.NewWith(pc.ffmpegIn)
+	// if err != nil {
+	// 	panic(err)
+	// }
+	webmSaver := newWebmSaver(pc.ffmpegIn)
 	_, err := pc.peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo,
 		webrtc.RTPTransceiverInit{
 			Direction: webrtc.RTPTransceiverDirectionRecvonly,
@@ -196,164 +198,27 @@ func (pc *PeerConnectionChannel) Spin() {
 			os.Exit(0)
 		}
 	})
-	pc.peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+	pc.peerConnection.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		slog.Info("PeerConnectionChannel: received track", "track", track)
-
-		if track.Codec().MimeType != webrtc.MimeTypeVP8 {
-			slog.Info("Ignoring non-VP8 track", "mimeType", track.Codec().MimeType)
-			return
+		fmt.Printf("Track has started, of type %d: %s \n", track.PayloadType(), track.Codec().RTPCodecCapability.MimeType)
+		if track.Kind() == webrtc.RTPCodecTypeVideo {
+			// Send a PLI on an interval so that the publisher is pushing a keyframe every rtcpPLIInterval
+			go func() {
+				ticker := time.NewTicker(time.Second * 3)
+				for range ticker.C {
+					errSend := pc.peerConnection.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(track.SSRC())}})
+					if errSend != nil {
+						fmt.Println(errSend)
+					}
+				}
+			}()
 		}
-
-		width, height := C.uint(640), C.uint(480)
-		var codec C.vpx_codec_ctx_t
-		if C.init_decoder(&codec, width, height) != 0 {
-			slog.Error("Failed to initialize decoder")
-			return
-		}
-		// defer C.vpx_codec_destroy(&codec)
-		slog.Info("Decoder initialized successfully", "width", width, "height", height)
-
-		currentFrame := []byte{}
-		seenKeyFrame := false
-		frameCount := 0
-		var lastSequenceNumber uint16
-
 		for {
-			packet, _, err := track.ReadRTP()
-			if err != nil {
-				slog.Error("Error reading RTP", "error", err)
-				break
+			rtp, _, readErr := track.ReadRTP()
+			if readErr != nil {
+				panic(readErr)
 			}
-
-			// Handle packet loss
-			if lastSequenceNumber != 0 {
-				diff := packet.SequenceNumber - lastSequenceNumber
-				if diff > 1 {
-					slog.Warn("Packet loss detected",
-						"expected", lastSequenceNumber+1,
-						"got", packet.SequenceNumber,
-					)
-					currentFrame = nil
-					continue
-				}
-			}
-			lastSequenceNumber = packet.SequenceNumber
-
-			vp8Packet := codecs.VP8Packet{}
-			if _, err := vp8Packet.Unmarshal(packet.Payload); err != nil {
-				slog.Error("Failed to unmarshal VP8 packet", "error", err)
-				continue
-			}
-
-			// Ensure we have at least one byte
-			if len(vp8Packet.Payload) == 0 {
-				continue
-			}
-
-			isKeyFrame := (vp8Packet.Payload[0] & 0x01) == 0
-
-			// Wait for keyframe if we haven't seen one
-			if !seenKeyFrame {
-				if !isKeyFrame {
-					continue
-				}
-				seenKeyFrame = true
-				slog.Info("First keyframe received")
-			}
-
-			// Skip if we're waiting for start of frame
-			if currentFrame == nil && vp8Packet.S != 1 {
-				continue
-			}
-
-			// For debugging first few frames
-			if frameCount < 5 && vp8Packet.S == 1 {
-				slog.Debug("New frame starting",
-					"frameCount", frameCount,
-					"keyframe", isKeyFrame,
-					"payloadSize", len(vp8Packet.Payload),
-					"firstByte", fmt.Sprintf("%08b", vp8Packet.Payload[0]))
-			}
-
-			currentFrame = append(currentFrame, vp8Packet.Payload...)
-
-			// Continue if not end of frame
-			if !packet.Marker {
-				continue
-			}
-
-			// Skip empty frames
-			if len(currentFrame) == 0 {
-				currentFrame = nil
-				continue
-			}
-
-			// Debug logging for first few frames
-			if frameCount < 5 {
-				slog.Debug("Complete frame",
-					"frameCount", frameCount,
-					"size", len(currentFrame),
-					"prefix", fmt.Sprintf("%x", currentFrame[:min(len(currentFrame), 16)]))
-			}
-
-			// Decode VP8 frame
-			codecError := C.decode_frame(&codec, (*C.uint8_t)(&currentFrame[0]), C.size_t(len(currentFrame)))
-			if codecError != 0 {
-				slog.Error("Decode error", "errorCode", codecError)
-				currentFrame = nil
-				continue
-			}
-
-			// Get decoded frames
-			var iter C.vpx_codec_iter_t
-			img := C.vpx_codec_get_frame(&codec, &iter)
-			if img == nil {
-				slog.Error("Failed to get decoded frame")
-				currentFrame = nil
-				continue
-			}
-
-			actualWidth := int(img.d_w)
-			actualHeight := int(img.d_h)
-
-			// Create GoCV Mat
-			goImg := gocv.NewMatWithSize(actualHeight, actualWidth, gocv.MatTypeCV8UC3)
-			if goImg.Empty() {
-				slog.Error("Failed to create Mat")
-				currentFrame = nil
-				continue
-			}
-			defer goImg.Close()
-
-			// Get Mat data pointer
-			goImgPtr, err := goImg.DataPtrUint8()
-			if err != nil {
-				slog.Error("Failed to get Mat data pointer", "error", err)
-				currentFrame = nil
-				continue
-			}
-
-			// Convert YUV to BGR
-			C.copy_frame_to_mat(
-				img,
-				(*C.uchar)(unsafe.Pointer(&goImgPtr[0])),
-				C.uint(actualWidth),
-				C.uint(actualHeight),
-			)
-
-			// Save frame
-			filename := fmt.Sprintf("frame_%d.jpg", frameCount)
-			if ok := gocv.IMWrite(filename, goImg); !ok {
-				slog.Error("Failed to write image", "filename", filename)
-			} else {
-				slog.Info("Saved frame",
-					"filename", filename,
-					"width", actualWidth,
-					"height", actualHeight)
-			}
-
-			frameCount++
-			currentFrame = nil
+			webmSaver.PushVP8(rtp)
 		}
 	})
 	pc.peerConnection.OnSignalingStateChange(func(state webrtc.SignalingState) {
