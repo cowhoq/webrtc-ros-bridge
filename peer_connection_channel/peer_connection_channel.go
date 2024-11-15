@@ -3,7 +3,6 @@ package peerconnectionchannel
 import (
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/pion/interceptor"
@@ -53,26 +52,6 @@ func InitPeerConnectionChannel(
 		panic(err)
 	}
 
-	// Register VP9
-	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP9, ClockRate: 90000, Channels: 0},
-		PayloadType:        98,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
-		panic(err)
-	}
-
-	// Register H264
-	if err := m.RegisterCodec(webrtc.RTPCodecParameters{
-		RTPCodecCapability: webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeH264, ClockRate: 90000, Channels: 0},
-		PayloadType:        102,
-	}, webrtc.RTPCodecTypeVideo); err != nil {
-		panic(err)
-	}
-
-	if err := m.RegisterDefaultCodecs(); err != nil {
-		panic(err)
-	}
-
 	registerHeaderExtensionURI(m, []string{
 		"urn:ietf:params:rtp-hdrext:toffset",
 		"http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
@@ -85,7 +64,6 @@ func InitPeerConnectionChannel(
 	})
 
 	i := &interceptor.Registry{}
-	// Use the default set of interceptors
 	if err := webrtc.RegisterDefaultInterceptors(m, i); err != nil {
 		panic(err)
 	}
@@ -158,25 +136,8 @@ func (pc *PeerConnectionChannel) Spin() {
 			panic(err)
 		}
 	})
-	pc.peerConnection.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
-		slog.Info("PeerConnectionChannel: connection state changed", "state", state)
-		if state == webrtc.PeerConnectionStateFailed {
-			// Wait until PeerConnection has had no network activity for 30 seconds or another failure. It may be reconnected using an ICE Restart.
-			// Use webrtc.PeerConnectionStateDisconnected if you are interested in detecting faster timeout.
-			// Note that the PeerConnection may come back from PeerConnectionStateDisconnected.
-			slog.Info("Peer Connection has gone to failed exiting")
-			os.Exit(0)
-		}
-
-		if state == webrtc.PeerConnectionStateClosed {
-			// PeerConnection was explicitly closed. This usually happens from a DTLS CloseNotify
-			slog.Info("Peer Connection has gone to closed exiting")
-			os.Exit(0)
-		}
-	})
 	pc.peerConnection.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
-		slog.Info("PeerConnectionChannel: received track", "track", track)
-		fmt.Printf("Track has started, of type %d: %s \n", track.PayloadType(), track.Codec().RTPCodecCapability.MimeType)
+		slog.Info("PeerConnectionChannel: received track", "track", track.ID())
 		if track.Kind() == webrtc.RTPCodecTypeVideo {
 			// Send a PLI on an interval so that the publisher is pushing a keyframe every rtcpPLIInterval
 			go func() {
@@ -195,26 +156,6 @@ func (pc *PeerConnectionChannel) Spin() {
 				panic(readErr)
 			}
 			webmSaver.PushVP8(rtp)
-		}
-	})
-	pc.peerConnection.OnSignalingStateChange(func(state webrtc.SignalingState) {
-		slog.Info("PeerConnectionChannel: signaling state changed", "state", state)
-	})
-	pc.peerConnection.OnICEConnectionStateChange(func(connectionState webrtc.ICEConnectionState) {
-		slog.Info("ICE Connection State changed",
-			"state", connectionState,
-			"signalingState", pc.peerConnection.SignalingState(),
-			"connectionState", pc.peerConnection.ConnectionState(),
-		)
-
-		if connectionState == webrtc.ICEConnectionStateConnected {
-			slog.Info("Ctrl+C the remote client to stop the demo")
-		} else if connectionState == webrtc.ICEConnectionStateFailed || connectionState == webrtc.ICEConnectionStateClosed {
-			// Gracefully shutdown the peer connection
-			if closeErr := pc.peerConnection.Close(); closeErr != nil {
-				panic(closeErr)
-			}
-			os.Exit(0)
 		}
 	})
 	go handleSignalingMessage(pc)

@@ -13,12 +13,12 @@ import (
 )
 
 type SignalingChannel struct {
-	addr              string
-	recv              chan []byte
-	c                 *websocket.Conn
-	sdpChan           chan<- webrtc.SessionDescription
-	sdpReplyChan      <-chan webrtc.SessionDescription
-	candidateChan     chan<- webrtc.ICECandidateInit
+	addr          string
+	recv          chan []byte
+	c             *websocket.Conn
+	sdpChan       chan<- webrtc.SessionDescription
+	sdpReplyChan  <-chan webrtc.SessionDescription
+	candidateChan chan<- webrtc.ICECandidateInit
 }
 
 type signalingResponse struct {
@@ -136,7 +136,6 @@ func (s *SignalingChannel) Spin() {
 	s.sdpChan <- sdp
 	slog.Info("recv sdp")
 	answer := <-s.sdpReplyChan // await answer from peer connection
-	answer.SDP += "a=ice-options:trickle\r\n"
 	// find "m=video 0 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101" in SDP
 	// and turn it into "m=video 9 UDP/TLS/RTP/SAVPF 96 97 98 99 100 101"
 	answer.SDP = strings.Replace(answer.SDP, "m=video 0", "m=video 9", 1)

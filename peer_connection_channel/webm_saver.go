@@ -7,7 +7,6 @@ package peerconnectionchannel
 import "C"
 
 import (
-	"fmt"
 	"log/slog"
 	"time"
 	"unsafe"
@@ -19,18 +18,12 @@ import (
 	"gocv.io/x/gocv"
 )
 
-const (
-	naluTypeBitmask = 0b11111
-	naluTypeSPS     = 7
-)
-
 type WebmSaver struct {
 	vp8Builder     *samplebuilder.SampleBuilder
 	videoTimestamp time.Duration
 
 	h264JitterBuffer   *jitterbuffer.JitterBuffer
 	lastVideoTimestamp uint32
-	count              int
 	codecCtx           C.vpx_codec_ctx_t
 	codecCreated       bool
 	imgChan            chan<- gocv.Mat
@@ -39,15 +32,13 @@ type WebmSaver struct {
 func newWebmSaver(imgChan chan<- gocv.Mat) *WebmSaver {
 	return &WebmSaver{
 		vp8Builder:       samplebuilder.New(200, &codecs.VP8Packet{}, 90000),
-		h264JitterBuffer: jitterbuffer.New(jitterbuffer.WithMinimumPacketCount(10)),
-		count:            0,
+		h264JitterBuffer: jitterbuffer.New(),
 		imgChan:          imgChan,
 		codecCreated:     false,
 	}
 }
 
 func (s *WebmSaver) Close() {
-	fmt.Printf("Finalizing webm...\n")
 	if s.codecCreated {
 		// TODO close codec
 	}
@@ -72,17 +63,12 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 			if !s.codecCreated {
 				s.InitWriter(width, height)
 			}
-			fmt.Println("============================= key frame")
 		}
-
-		fmt.Printf("frame %d generated %dms\n", s.count, time.Now().UnixMilli())
-		s.count++
 
 		// Decode VP8 frame
 		codecError := C.decode_frame(&s.codecCtx, (*C.uint8_t)(&sample.Data[0]), C.size_t(len(sample.Data)))
 		if codecError != 0 {
 			slog.Error("Decode error", "errorCode", codecError)
-			// currentFrame = nil
 			continue
 		}
 		// Get decoded frames
@@ -90,7 +76,6 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 		img := C.vpx_codec_get_frame(&s.codecCtx, &iter)
 		if img == nil {
 			slog.Error("Failed to get decoded frame")
-			// currentFrame = nil
 			continue
 		}
 		actualWidth := int(img.d_w)
@@ -98,14 +83,12 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 		goImg := gocv.NewMatWithSize(actualHeight, actualWidth, gocv.MatTypeCV8UC3)
 		if goImg.Empty() {
 			slog.Error("Failed to create Mat")
-			// currentFrame = nil
 			continue
 		}
 		// Get Mat data pointer
 		goImgPtr, err := goImg.DataPtrUint8()
 		if err != nil {
 			slog.Error("Failed to get Mat data pointer", "error", err)
-			// currentFrame = nil
 			continue
 		}
 		// Convert YUV to BGR
