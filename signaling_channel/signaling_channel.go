@@ -73,7 +73,7 @@ func composeActions() map[string]interface{} {
 				"type":      "add_video_track",
 				"stream_id": streamId,
 				"id":        streamId + "/subscribed_video",
-				"src":       "ros_image:/image",
+				"src":       "ros_image:/image_raw",
 			},
 		},
 	}

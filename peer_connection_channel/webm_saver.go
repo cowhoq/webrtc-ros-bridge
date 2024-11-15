@@ -1,15 +1,22 @@
 package peerconnectionchannel
 
+/*
+#cgo LDFLAGS: -L. -lvp8decoder -lvpx -lm
+#include "vp8_decoder.h"
+*/
+import "C"
+
 import (
 	"fmt"
-	"io"
+	"log/slog"
 	"time"
+	"unsafe"
 
-	"github.com/at-wat/ebml-go/webm"
 	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
+	"gocv.io/x/gocv"
 )
 
 const (
@@ -18,29 +25,31 @@ const (
 )
 
 type WebmSaver struct {
-	videoWriter    webm.BlockWriteCloser
 	vp8Builder     *samplebuilder.SampleBuilder
 	videoTimestamp time.Duration
 
 	h264JitterBuffer   *jitterbuffer.JitterBuffer
 	lastVideoTimestamp uint32
-	w                  io.WriteCloser
+	count              int
+	codec_ctx          C.vpx_codec_ctx_t
+	codecCreated       bool
+	imgChan            chan<- gocv.Mat
 }
 
-func newWebmSaver(w io.WriteCloser) *WebmSaver {
+func newWebmSaver(imgChan chan<- gocv.Mat) *WebmSaver {
 	return &WebmSaver{
-		vp8Builder:       samplebuilder.New(10, &codecs.VP8Packet{}, 90000),
-		h264JitterBuffer: jitterbuffer.New(),
-		w:                w,
+		vp8Builder:       samplebuilder.New(200, &codecs.VP8Packet{}, 90000),
+		h264JitterBuffer: jitterbuffer.New(jitterbuffer.WithMinimumPacketCount(10)),
+		count:            0,
+		imgChan:          imgChan,
+		codecCreated:     false,
 	}
 }
 
 func (s *WebmSaver) Close() {
 	fmt.Printf("Finalizing webm...\n")
-	if s.videoWriter != nil {
-		if err := s.videoWriter.Close(); err != nil {
-			panic(err)
-		}
+	if s.codecCreated {
+		// TODO close codec
 	}
 }
 
@@ -60,38 +69,59 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 			width := int(raw & 0x3FFF)
 			height := int((raw >> 16) & 0x3FFF)
 
-			if s.videoWriter == nil {
+			if !s.codecCreated {
 				s.InitWriter(width, height)
 			}
+			fmt.Println("============================= key frame")
 		}
-		if s.videoWriter != nil {
-			s.videoTimestamp += sample.Duration
-			if _, err := s.videoWriter.Write(videoKeyframe, int64(s.videoTimestamp/time.Millisecond), sample.Data); err != nil {
-				panic(err)
-			}
+
+		fmt.Printf("frame %d generated %dms\n", s.count, time.Now().UnixMilli())
+		s.count++
+
+		// Decode VP8 frame
+		codecError := C.decode_frame(&s.codec_ctx, (*C.uint8_t)(&sample.Data[0]), C.size_t(len(sample.Data)))
+		if codecError != 0 {
+			slog.Error("Decode error", "errorCode", codecError)
+			// currentFrame = nil
+			continue
 		}
+		// Get decoded frames
+		var iter C.vpx_codec_iter_t
+		img := C.vpx_codec_get_frame(&s.codec_ctx, &iter)
+		if img == nil {
+			slog.Error("Failed to get decoded frame")
+			// currentFrame = nil
+			continue
+		}
+		actualWidth := int(img.d_w)
+		actualHeight := int(img.d_h)
+		goImg := gocv.NewMatWithSize(actualHeight, actualWidth, gocv.MatTypeCV8UC3)
+		if goImg.Empty() {
+			slog.Error("Failed to create Mat")
+			// currentFrame = nil
+			continue
+		}
+		// Get Mat data pointer
+		goImgPtr, err := goImg.DataPtrUint8()
+		if err != nil {
+			slog.Error("Failed to get Mat data pointer", "error", err)
+			// currentFrame = nil
+			continue
+		}
+		// Convert YUV to BGR
+		C.copy_frame_to_mat(
+			img,
+			(*C.uchar)(unsafe.Pointer(&goImgPtr[0])),
+			C.uint(actualWidth),
+			C.uint(actualHeight),
+		)
+		s.imgChan <- goImg
 	}
 }
 
 func (s *WebmSaver) InitWriter(width, height int) {
-	videoMimeType := "V_VP8"
-	ws, err := webm.NewSimpleBlockWriter(s.w,
-		[]webm.TrackEntry{
-			{
-				Name:            "Video",
-				TrackNumber:     1,
-				TrackUID:        67890,
-				CodecID:         videoMimeType,
-				TrackType:       1,
-				DefaultDuration: 33333333,
-				Video: &webm.Video{
-					PixelWidth:  uint64(width),
-					PixelHeight: uint64(height),
-				},
-			},
-		})
-	if err != nil {
-		panic(err)
+	if errCode := C.init_decoder(&s.codec_ctx, C.uint(width), C.uint(height)); errCode != 0 {
+		slog.Error("failed to initialize decoder", "error", errCode)
 	}
-	s.videoWriter = ws[0]
+	s.codecCreated = true
 }

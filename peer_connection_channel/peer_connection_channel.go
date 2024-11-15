@@ -2,7 +2,6 @@ package peerconnectionchannel
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"sync"
@@ -11,6 +10,7 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v4"
+	"gocv.io/x/gocv"
 )
 
 type PeerConnectionChannel struct {
@@ -22,7 +22,7 @@ type PeerConnectionChannel struct {
 	peerConnection    *webrtc.PeerConnection
 	m                 *webrtc.MediaEngine
 	signalCandidate   func(c webrtc.ICECandidateInit) error
-	ffmpegIn          io.WriteCloser
+	imgChan           chan<- gocv.Mat
 }
 
 func registerHeaderExtensionURI(m *webrtc.MediaEngine, uris []string) {
@@ -47,7 +47,7 @@ func InitPeerConnectionChannel(
 	pendingCandidates []*webrtc.ICECandidate,
 	candidatesMux *sync.Mutex,
 	signalCandidate func(c webrtc.ICECandidateInit) error,
-	ffmpegIn io.WriteCloser,
+	imgChan chan<- gocv.Mat,
 ) *PeerConnectionChannel {
 	m := &webrtc.MediaEngine{}
 	// Register VP8
@@ -115,7 +115,7 @@ func InitPeerConnectionChannel(
 		peerConnection:    peerConnection,
 		m:                 m,
 		signalCandidate:   signalCandidate,
-		ffmpegIn:          ffmpegIn,
+		imgChan:           imgChan,
 	}
 }
 
@@ -156,11 +156,7 @@ func handleSignalingMessage(pc *PeerConnectionChannel) {
 }
 
 func (pc *PeerConnectionChannel) Spin() {
-	// ivfWriter, err := ivfwriter.NewWith(pc.ffmpegIn)
-	// if err != nil {
-	// 	panic(err)
-	// }
-	webmSaver := newWebmSaver(pc.ffmpegIn)
+	webmSaver := newWebmSaver(pc.imgChan)
 	_, err := pc.peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo,
 		webrtc.RTPTransceiverInit{
 			Direction: webrtc.RTPTransceiverDirectionRecvonly,
