@@ -31,7 +31,7 @@ type WebmSaver struct {
 	h264JitterBuffer   *jitterbuffer.JitterBuffer
 	lastVideoTimestamp uint32
 	count              int
-	codec_ctx          C.vpx_codec_ctx_t
+	codecCtx           C.vpx_codec_ctx_t
 	codecCreated       bool
 	imgChan            chan<- gocv.Mat
 }
@@ -79,7 +79,7 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 		s.count++
 
 		// Decode VP8 frame
-		codecError := C.decode_frame(&s.codec_ctx, (*C.uint8_t)(&sample.Data[0]), C.size_t(len(sample.Data)))
+		codecError := C.decode_frame(&s.codecCtx, (*C.uint8_t)(&sample.Data[0]), C.size_t(len(sample.Data)))
 		if codecError != 0 {
 			slog.Error("Decode error", "errorCode", codecError)
 			// currentFrame = nil
@@ -87,7 +87,7 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 		}
 		// Get decoded frames
 		var iter C.vpx_codec_iter_t
-		img := C.vpx_codec_get_frame(&s.codec_ctx, &iter)
+		img := C.vpx_codec_get_frame(&s.codecCtx, &iter)
 		if img == nil {
 			slog.Error("Failed to get decoded frame")
 			// currentFrame = nil
@@ -120,7 +120,7 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 }
 
 func (s *WebmSaver) InitWriter(width, height int) {
-	if errCode := C.init_decoder(&s.codec_ctx, C.uint(width), C.uint(height)); errCode != 0 {
+	if errCode := C.init_decoder(&s.codecCtx, C.uint(width), C.uint(height)); errCode != 0 {
 		slog.Error("failed to initialize decoder", "error", errCode)
 	}
 	s.codecCreated = true

@@ -1,4 +1,4 @@
-package codecchannel
+package roschannel
 
 import (
 	"fmt"
@@ -7,19 +7,19 @@ import (
 	"gocv.io/x/gocv"
 )
 
-type CodecChannel struct {
+type ROSChannel struct {
 	imgChan <-chan gocv.Mat
 }
 
 func InitCodecChannel(
 	imgChan <-chan gocv.Mat,
-) *CodecChannel {
-	return &CodecChannel{
+) *ROSChannel {
+	return &ROSChannel{
 		imgChan: imgChan,
 	}
 }
 
-func (cc *CodecChannel) Spin() {
+func (cc *ROSChannel) Spin() {
 	window := gocv.NewWindow("Image Window")
 	defer window.Close()
 

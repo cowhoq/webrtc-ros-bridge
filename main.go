@@ -4,8 +4,8 @@ import (
 	"flag"
 	"sync"
 
-	codecchannel "github.com/3DRX/webrtc-ros-bridge/codec_channel"
 	peerconnectionchannel "github.com/3DRX/webrtc-ros-bridge/peer_connection_channel"
+	roschannel "github.com/3DRX/webrtc-ros-bridge/ros_channel"
 	signalingchannel "github.com/3DRX/webrtc-ros-bridge/signaling_channel"
 	"github.com/pion/webrtc/v4"
 	"gocv.io/x/gocv"
@@ -43,7 +43,7 @@ func main() {
 		sc.SignalCandidate,
 		imgChan,
 	)
-	cc := codecchannel.InitCodecChannel(imgChan)
+	cc := roschannel.InitCodecChannel(imgChan)
 	go sc.Spin()
 	go pc.Spin()
 	go cc.Spin()
