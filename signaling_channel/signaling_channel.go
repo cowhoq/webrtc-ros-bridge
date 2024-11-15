@@ -6,7 +6,6 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/gorilla/websocket"
 	"github.com/pion/webrtc/v4"
@@ -20,8 +19,6 @@ type SignalingChannel struct {
 	sdpChan           chan<- webrtc.SessionDescription
 	sdpReplyChan      <-chan webrtc.SessionDescription
 	candidateChan     chan<- webrtc.ICECandidateInit
-	pendingCandidates []*webrtc.ICECandidate
-	candidatesMux     *sync.Mutex
 }
 
 type signalingResponse struct {
@@ -41,18 +38,14 @@ func InitSignalingChannel(
 	sdpChan chan webrtc.SessionDescription,
 	sdpReplyChan <-chan webrtc.SessionDescription,
 	candidateChan chan<- webrtc.ICECandidateInit,
-	pendingCandidates []*webrtc.ICECandidate,
-	candidatesMux *sync.Mutex,
 ) *SignalingChannel {
 	return &SignalingChannel{
-		addr:              *addr,
-		recv:              make(chan []byte),
-		c:                 nil,
-		sdpChan:           sdpChan,
-		sdpReplyChan:      sdpReplyChan,
-		candidateChan:     candidateChan,
-		pendingCandidates: pendingCandidates,
-		candidatesMux:     candidatesMux,
+		addr:          *addr,
+		recv:          make(chan []byte),
+		c:             nil,
+		sdpChan:       sdpChan,
+		sdpReplyChan:  sdpReplyChan,
+		candidateChan: candidateChan,
 	}
 }
 

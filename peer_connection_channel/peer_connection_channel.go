@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/pion/interceptor"
@@ -14,15 +13,13 @@ import (
 )
 
 type PeerConnectionChannel struct {
-	sdpChan           <-chan webrtc.SessionDescription
-	sdpReplyChan      chan<- webrtc.SessionDescription
-	candidateChan     <-chan webrtc.ICECandidateInit
-	pendingCandidates []*webrtc.ICECandidate
-	candidatesMux     *sync.Mutex
-	peerConnection    *webrtc.PeerConnection
-	m                 *webrtc.MediaEngine
-	signalCandidate   func(c webrtc.ICECandidateInit) error
-	imgChan           chan<- gocv.Mat
+	sdpChan         <-chan webrtc.SessionDescription
+	sdpReplyChan    chan<- webrtc.SessionDescription
+	candidateChan   <-chan webrtc.ICECandidateInit
+	peerConnection  *webrtc.PeerConnection
+	m               *webrtc.MediaEngine
+	signalCandidate func(c webrtc.ICECandidateInit) error
+	imgChan         chan<- gocv.Mat
 }
 
 func registerHeaderExtensionURI(m *webrtc.MediaEngine, uris []string) {
@@ -44,8 +41,6 @@ func InitPeerConnectionChannel(
 	sdpChan chan webrtc.SessionDescription,
 	sdpReplyChan chan<- webrtc.SessionDescription,
 	candidateChan <-chan webrtc.ICECandidateInit,
-	pendingCandidates []*webrtc.ICECandidate,
-	candidatesMux *sync.Mutex,
 	signalCandidate func(c webrtc.ICECandidateInit) error,
 	imgChan chan<- gocv.Mat,
 ) *PeerConnectionChannel {
@@ -107,15 +102,13 @@ func InitPeerConnectionChannel(
 		panic(err)
 	}
 	return &PeerConnectionChannel{
-		sdpChan:           sdpChan,
-		sdpReplyChan:      sdpReplyChan,
-		candidateChan:     candidateChan,
-		pendingCandidates: pendingCandidates,
-		candidatesMux:     candidatesMux,
-		peerConnection:    peerConnection,
-		m:                 m,
-		signalCandidate:   signalCandidate,
-		imgChan:           imgChan,
+		sdpChan:         sdpChan,
+		sdpReplyChan:    sdpReplyChan,
+		candidateChan:   candidateChan,
+		peerConnection:  peerConnection,
+		m:               m,
+		signalCandidate: signalCandidate,
+		imgChan:         imgChan,
 	}
 }
 
@@ -137,14 +130,6 @@ func handleSignalingMessage(pc *PeerConnectionChannel) {
 			if err != nil {
 				panic(err)
 			}
-			pc.candidatesMux.Lock()
-			for _, c := range pc.pendingCandidates {
-				onICECandidateErr := pc.signalCandidate(c.ToJSON())
-				if onICECandidateErr != nil {
-					panic(onICECandidateErr)
-				}
-			}
-			pc.candidatesMux.Unlock()
 		case candidate := <-pc.candidateChan:
 			err := pc.peerConnection.AddICECandidate(candidate)
 			if err != nil {
@@ -169,12 +154,7 @@ func (pc *PeerConnectionChannel) Spin() {
 		if c == nil {
 			return
 		}
-		pc.candidatesMux.Lock()
-		defer pc.candidatesMux.Unlock()
-		desc := pc.peerConnection.RemoteDescription()
-		if desc == nil {
-			pc.pendingCandidates = append(pc.pendingCandidates, c)
-		} else if err := pc.signalCandidate(c.ToJSON()); err != nil {
+		if err := pc.signalCandidate(c.ToJSON()); err != nil {
 			panic(err)
 		}
 	})
