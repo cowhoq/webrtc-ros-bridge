@@ -3,31 +3,48 @@ package roschannel
 import (
 	"log/slog"
 
+	"github.com/3DRX/webrtc-ros-bridge/config"
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/ros_channel/msgs/sensor_msgs/msg"
 	"github.com/tiiuae/rclgo/pkg/rclgo"
 )
 
 type ROSChannel struct {
-	imgChan <-chan sensor_msgs_msg.Image
+	imgChan  <-chan sensor_msgs_msg.Image
+	cfg      *config.Config
+	topicIdx int
 }
 
-func InitROSChannel(imgChan <-chan sensor_msgs_msg.Image) *ROSChannel {
+func InitROSChannel(
+	cfg *config.Config,
+	topicIdx int,
+	imgChan <-chan sensor_msgs_msg.Image,
+) *ROSChannel {
 	return &ROSChannel{
-		imgChan: imgChan,
+		cfg:      cfg,
+		topicIdx: topicIdx,
+		imgChan:  imgChan,
 	}
 }
 
-func (cc *ROSChannel) Spin() {
+func (r *ROSChannel) Spin() {
 	err := rclgo.Init(nil)
 	if err != nil {
 		panic(err)
 	}
-	node, err := rclgo.NewNode("webrtc_bridge_client", "")
+	node, err := rclgo.NewNode(
+		"webrtc_ros_bridge_"+
+			r.cfg.Mode+
+			"_"+
+			r.cfg.Topics[r.topicIdx].Type+
+			"_"+
+			r.cfg.Topics[r.topicIdx].NameOut,
+		"",
+	)
 	if err != nil {
 		panic(err)
 	}
 	defer node.Close()
-	pub, err := sensor_msgs_msg.NewImagePublisher(node, "/image", nil)
+	pub, err := sensor_msgs_msg.NewImagePublisher(node, "/"+r.cfg.Topics[r.topicIdx].NameOut, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -35,7 +52,7 @@ func (cc *ROSChannel) Spin() {
 	defer rclgo.Uninit()
 
 	for {
-		img := <-cc.imgChan
+		img := <-r.imgChan
 		err := pub.Publish(&img)
 		if err != nil {
 			slog.Error("Failed to publish image message", "error", err)
