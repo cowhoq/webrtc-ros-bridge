@@ -16,7 +16,6 @@ type PeerConnectionChannel struct {
 	sdpReplyChan    chan<- webrtc.SessionDescription
 	candidateChan   <-chan webrtc.ICECandidateInit
 	peerConnection  *webrtc.PeerConnection
-	m               *webrtc.MediaEngine
 	signalCandidate func(c webrtc.ICECandidateInit) error
 	imgChan         chan<- sensor_msgs_msg.Image
 }
@@ -84,7 +83,6 @@ func InitPeerConnectionChannel(
 		sdpReplyChan:    sdpReplyChan,
 		candidateChan:   candidateChan,
 		peerConnection:  peerConnection,
-		m:               m,
 		signalCandidate: signalCandidate,
 		imgChan:         imgChan,
 	}
