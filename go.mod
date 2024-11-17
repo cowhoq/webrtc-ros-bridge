@@ -9,7 +9,6 @@ require (
 	github.com/pion/rtp v1.8.9
 	github.com/pion/webrtc/v4 v4.0.1
 	github.com/tiiuae/rclgo v0.0.0-20240131135202-56b24e11219b
-	gocv.io/x/gocv v0.39.0
 	golang.org/x/exp v0.0.0-20241108190413-2d47ceb2692f
 )
 

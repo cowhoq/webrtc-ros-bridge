@@ -1,5 +1,10 @@
 // vp8_decoder.c
 #include "vp8_decoder.h"
+#include <rcutils/allocator.h>
+#include <rosidl_runtime_c/primitives_sequence_functions.h>
+#include <rosidl_runtime_c/string_functions.h>
+#include <sensor_msgs/msg/image.h>
+#include <string.h>
 #include <vpx/vp8.h>
 #include <vpx/vp8dx.h>
 #include <vpx/vpx_decoder.h>
@@ -25,82 +30,43 @@ vpx_image_t *get_frame(vpx_codec_ctx_t *codec) {
   return vpx_codec_get_frame(codec, &iter);
 }
 
-// #define 永远缅怀
-#ifdef 永远缅怀
-void copy_frame_to_mat(vpx_image_t *img, unsigned char *dest,
-                       unsigned int width, unsigned int height) {
-  for (int y = 0; y < height; y++) {
-    for (int x = 0; x < width; x += 8) { // Process 8 pixels at a time
-      // Load Y values
-      __m128i Y = _mm_loadl_epi64(
-          (__m128i *)&img
-              ->planes[VPX_PLANE_Y][y * img->stride[VPX_PLANE_Y] + x]);
+void vpx_to_ros_image(const vpx_image_t *vpx_img,
+                      sensor_msgs__msg__Image *ros_img) {
+  // Initialize ROS message
+  sensor_msgs__msg__Image__init(ros_img);
 
-      // Load U and V values (subsampled by 2)
-      __m128i U = _mm_loadl_epi64(
-          (__m128i *)&img
-              ->planes[VPX_PLANE_U]
-                      [(y >> 1) * img->stride[VPX_PLANE_U] + (x >> 1)]);
-      __m128i V = _mm_loadl_epi64(
-          (__m128i *)&img
-              ->planes[VPX_PLANE_V]
-                      [(y >> 1) * img->stride[VPX_PLANE_V] + (x >> 1)]);
+  // Set image dimensions
+  ros_img->width = vpx_img->d_w;
+  ros_img->height = vpx_img->d_h;
 
-      // Unpack U and V values to 16-bit integers and subtract 128
-      U = _mm_sub_epi16(_mm_unpacklo_epi8(U, _mm_setzero_si128()),
-                        _mm_set1_epi16(128));
-      V = _mm_sub_epi16(_mm_unpacklo_epi8(V, _mm_setzero_si128()),
-                        _mm_set1_epi16(128));
+  // Set encoding to bgr8 since we'll convert to BGR
+  rosidl_runtime_c__String__init(&ros_img->encoding);
+  rosidl_runtime_c__String__assign(&ros_img->encoding, "bgr8");
 
-      // Unpack Y values to 16-bit integers
-      Y = _mm_unpacklo_epi8(Y, _mm_setzero_si128());
+  // Set step (3 bytes per pixel for BGR)
+  ros_img->step = ros_img->width * 3;
 
-      // YUV to RGB conversion
-      __m128i R = _mm_add_epi16(
-          Y, _mm_mulhi_epi16(V, _mm_set1_epi16(1436))); // 1.403 * 1024 = 1436
-      __m128i G = _mm_sub_epi16(
-          Y, _mm_add_epi16(
-                 _mm_mulhi_epi16(U, _mm_set1_epi16(352)),
-                 _mm_mulhi_epi16(
-                     V, _mm_set1_epi16(
-                            731)))); // 0.344 * 1024 = 352, 0.714 * 1024 = 731
-      __m128i B = _mm_add_epi16(
-          Y, _mm_mulhi_epi16(U, _mm_set1_epi16(1814))); // 1.770 * 1024 = 1814
+  // Allocate data array
+  size_t data_size = ros_img->step * ros_img->height;
+  rosidl_runtime_c__uint8__Sequence *seq = &ros_img->data;
+  seq->data = (uint8_t *)malloc(data_size * sizeof(uint8_t));
+  seq->size = data_size;
+  seq->capacity = data_size;
 
-      // Pack and clamp RGB values to 8-bit
-      __m128i zero = _mm_setzero_si128();
-      R = _mm_packus_epi16(R, zero);
-      G = _mm_packus_epi16(G, zero);
-      B = _mm_packus_epi16(B, zero);
-
-      // Interleave RGB values
-      __m128i RG = _mm_unpacklo_epi8(R, G);
-      __m128i BZ = _mm_unpacklo_epi8(B, zero);
-      __m128i RGB0 = _mm_unpacklo_epi16(RG, BZ);
-      __m128i RGB1 = _mm_unpackhi_epi16(RG, BZ);
-
-      // Store RGB values to destination
-      _mm_storeu_si128((__m128i *)&dest[(y * width + x) * 3], RGB0);
-      _mm_storeu_si128((__m128i *)&dest[(y * width + x + 4) * 3], RGB1);
-    }
-  }
-}
-#else
-void copy_frame_to_mat(vpx_image_t *img, unsigned char *dest,
-                       unsigned int width, unsigned int height) {
-  for (int y = 0; y < height; y++) {
-    for (int x = 0; x < width; x++) {
+  // Convert and copy data
+  for (int y = 0; y < ros_img->height; y++) {
+    for (int x = 0; x < ros_img->width; x++) {
       // Calculate correct indices using strides
-      int y_idx = y * img->stride[VPX_PLANE_Y] + x;
-      int u_idx = (y >> 1) * img->stride[VPX_PLANE_U] + (x >> 1);
-      int v_idx = (y >> 1) * img->stride[VPX_PLANE_V] + (x >> 1);
+      int y_idx = y * vpx_img->stride[VPX_PLANE_Y] + x;
+      int u_idx = (y >> 1) * vpx_img->stride[VPX_PLANE_U] + (x >> 1);
+      int v_idx = (y >> 1) * vpx_img->stride[VPX_PLANE_V] + (x >> 1);
 
       // Get YUV values
-      int Y = img->planes[VPX_PLANE_Y][y_idx];
-      int U = img->planes[VPX_PLANE_U][u_idx] - 128;
-      int V = img->planes[VPX_PLANE_V][v_idx] - 128;
+      int Y = vpx_img->planes[VPX_PLANE_Y][y_idx];
+      int U = vpx_img->planes[VPX_PLANE_U][u_idx] - 128;
+      int V = vpx_img->planes[VPX_PLANE_V][v_idx] - 128;
 
-      // YUV to RGB conversion with proper coefficients
+      // YUV to RGB conversion
       int R = Y + (1.403 * V);
       int G = Y - (0.344 * U) - (0.714 * V);
       int B = Y + (1.770 * U);
@@ -111,11 +77,15 @@ void copy_frame_to_mat(vpx_image_t *img, unsigned char *dest,
       B = B < 0 ? 0 : (B > 255 ? 255 : B);
 
       // Write to destination in BGR order
-      int dest_idx = (y * width + x) * 3;
-      dest[dest_idx + 0] = (unsigned char)B;
-      dest[dest_idx + 1] = (unsigned char)G;
-      dest[dest_idx + 2] = (unsigned char)R;
+      int dest_idx = (y * ros_img->width + x) * 3;
+      seq->data[dest_idx + 0] = (unsigned char)R;
+      seq->data[dest_idx + 1] = (unsigned char)G;
+      seq->data[dest_idx + 2] = (unsigned char)B;
     }
   }
 }
-#endif
+
+// Don't forget to clean up when done
+void cleanup_ros_image(sensor_msgs__msg__Image *ros_img) {
+  sensor_msgs__msg__Image__fini(ros_img);
+}

@@ -11,11 +11,11 @@ import (
 	"time"
 	"unsafe"
 
+	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/ros_channel/msgs/sensor_msgs/msg"
 	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
 	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
-	"gocv.io/x/gocv"
 )
 
 type WebmSaver struct {
@@ -26,10 +26,10 @@ type WebmSaver struct {
 	lastVideoTimestamp uint32
 	codecCtx           C.vpx_codec_ctx_t
 	codecCreated       bool
-	imgChan            chan<- gocv.Mat
+	imgChan            chan<- sensor_msgs_msg.Image
 }
 
-func newWebmSaver(imgChan chan<- gocv.Mat) *WebmSaver {
+func newWebmSaver(imgChan chan<- sensor_msgs_msg.Image) *WebmSaver {
 	return &WebmSaver{
 		vp8Builder:       samplebuilder.New(200, &codecs.VP8Packet{}, 90000),
 		h264JitterBuffer: jitterbuffer.New(),
@@ -78,29 +78,15 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 			slog.Error("Failed to get decoded frame")
 			continue
 		}
-		actualWidth := int(img.d_w)
-		actualHeight := int(img.d_h)
-		goImg := gocv.NewMatWithSize(actualHeight, actualWidth, gocv.MatTypeCV8UC3)
-		if goImg.Empty() {
-			slog.Error("Failed to create Mat")
-			continue
-		}
-		// Get Mat data pointer
-		goImgPtr, err := goImg.DataPtrUint8()
-		if err != nil {
-			slog.Error("Failed to get Mat data pointer", "error", err)
-			continue
-		}
-		// Convert YUV to BGR
-		C.copy_frame_to_mat(
-			img,
-			(*C.uchar)(unsafe.Pointer(&goImgPtr[0])),
-			C.uint(actualWidth),
-			C.uint(actualHeight),
-		)
-		s.imgChan <- goImg
+		var ros_img sensor_msgs_msg.Image
+		var ros_img_c C.sensor_msgs__msg__Image
+		C.vpx_to_ros_image(img, &ros_img_c)
+		sensor_msgs_msg.ImageTypeSupport.AsGoStruct(&ros_img, unsafe.Pointer(&ros_img_c))
+		s.imgChan <- ros_img
 	}
 }
+
+func vpxToROSImage()
 
 func (s *WebmSaver) InitWriter(width, height int) {
 	if errCode := C.init_decoder(&s.codecCtx, C.uint(width), C.uint(height)); errCode != 0 {
