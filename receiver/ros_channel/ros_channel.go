@@ -4,7 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/3DRX/webrtc-ros-bridge/config"
-	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/ros_channel/msgs/sensor_msgs/msg"
+	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
 	"github.com/tiiuae/rclgo/pkg/rclgo"
 )
 

@@ -2,10 +2,10 @@ package main
 
 import (
 	"github.com/3DRX/webrtc-ros-bridge/config"
-	peerconnectionchannel "github.com/3DRX/webrtc-ros-bridge/peer_connection_channel"
-	roschannel "github.com/3DRX/webrtc-ros-bridge/ros_channel"
-	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/ros_channel/msgs/sensor_msgs/msg"
-	signalingchannel "github.com/3DRX/webrtc-ros-bridge/signaling_channel"
+	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
+	peerconnectionchannel "github.com/3DRX/webrtc-ros-bridge/receiver/peer_connection_channel"
+	roschannel "github.com/3DRX/webrtc-ros-bridge/receiver/ros_channel"
+	signalingchannel "github.com/3DRX/webrtc-ros-bridge/receiver/signaling_channel"
 	"github.com/pion/webrtc/v4"
 )
 

@@ -25,4 +25,4 @@ go.work.sum
 *.env
 
 webrtc-ros-bridge
-ros_channel/msgs/
+rclgo_gen/
