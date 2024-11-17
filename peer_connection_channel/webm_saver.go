@@ -82,6 +82,7 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 		var ros_img_c C.sensor_msgs__msg__Image
 		C.vpx_to_ros_image(img, &ros_img_c)
 		sensor_msgs_msg.ImageTypeSupport.AsGoStruct(&ros_img, unsafe.Pointer(&ros_img_c))
+		C.cleanup_ros_image(&ros_img_c)
 		s.imgChan <- ros_img
 	}
 }
