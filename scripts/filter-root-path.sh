@@ -19,7 +19,7 @@ packages=(
 include_pattern=$(printf "install/%s$|" "${packages[@]}")
 include_pattern=${exclude_pattern%|} # Remove the trailing '|'
 
-# Step 1: Echo the AMEND_PREFIX_PATH
+# Step 1: Echo the AMENT_PREFIX_PATH
 echo "$AMENT_PREFIX_PATH" |
 # Step 2: Replace all ":" with new lines
 tr ':' '\n' |

@@ -14,3 +14,8 @@ Source your ros2 workspace setup.sh, and then
 ```
 make
 ```
+
+## Dev
+
+For editor use, it's better to `source ./cgo-flags.env`
+before opening editor for language server to work.
