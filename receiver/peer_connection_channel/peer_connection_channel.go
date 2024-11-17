@@ -17,7 +17,7 @@ type PeerConnectionChannel struct {
 	candidateChan   <-chan webrtc.ICECandidateInit
 	peerConnection  *webrtc.PeerConnection
 	signalCandidate func(c webrtc.ICECandidateInit) error
-	imgChan         chan<- sensor_msgs_msg.Image
+	imgChan         chan<- *sensor_msgs_msg.Image
 }
 
 func registerHeaderExtensionURI(m *webrtc.MediaEngine, uris []string) {
@@ -40,7 +40,7 @@ func InitPeerConnectionChannel(
 	sdpReplyChan chan<- webrtc.SessionDescription,
 	candidateChan <-chan webrtc.ICECandidateInit,
 	signalCandidate func(c webrtc.ICECandidateInit) error,
-	imgChan chan<- sensor_msgs_msg.Image,
+	imgChan chan<- *sensor_msgs_msg.Image,
 ) *PeerConnectionChannel {
 	m := &webrtc.MediaEngine{}
 	// Register VP8

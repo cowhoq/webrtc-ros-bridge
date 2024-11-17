@@ -26,3 +26,5 @@ go.work.sum
 
 webrtc-ros-bridge
 rclgo_gen/
+*.json
+*.bak

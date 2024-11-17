@@ -2,6 +2,7 @@ package roschannel
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/3DRX/webrtc-ros-bridge/config"
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
@@ -9,7 +10,7 @@ import (
 )
 
 type ROSChannel struct {
-	imgChan  <-chan sensor_msgs_msg.Image
+	imgChan  <-chan *sensor_msgs_msg.Image
 	cfg      *config.Config
 	topicIdx int
 }
@@ -17,7 +18,7 @@ type ROSChannel struct {
 func InitROSChannel(
 	cfg *config.Config,
 	topicIdx int,
-	imgChan <-chan sensor_msgs_msg.Image,
+	imgChan <-chan *sensor_msgs_msg.Image,
 ) *ROSChannel {
 	return &ROSChannel{
 		cfg:      cfg,
@@ -31,15 +32,9 @@ func (r *ROSChannel) Spin() {
 	if err != nil {
 		panic(err)
 	}
-	node, err := rclgo.NewNode(
-		"webrtc_ros_bridge_"+
-			r.cfg.Mode+
-			"_"+
-			r.cfg.Topics[r.topicIdx].Type+
-			"_"+
-			r.cfg.Topics[r.topicIdx].NameOut,
-		"",
-	)
+	nodeName := "webrtc_ros_bridge_" + r.cfg.Mode + "_" + r.cfg.Topics[r.topicIdx].Type + "_" + r.cfg.Topics[r.topicIdx].NameOut
+	nodeName = strings.ReplaceAll(nodeName, "/", "_")
+	node, err := rclgo.NewNode(nodeName, "")
 	if err != nil {
 		panic(err)
 	}
@@ -53,7 +48,7 @@ func (r *ROSChannel) Spin() {
 
 	for {
 		img := <-r.imgChan
-		err := pub.Publish(&img)
+		err := pub.Publish(img)
 		if err != nil {
 			slog.Error("Failed to publish image message", "error", err)
 		}
