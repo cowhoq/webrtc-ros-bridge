@@ -6,6 +6,7 @@ import (
 	recv_peerconnectionchannel "github.com/3DRX/webrtc-ros-bridge/receiver/peer_connection_channel"
 	recv_roschannel "github.com/3DRX/webrtc-ros-bridge/receiver/ros_channel"
 	recv_signalingchannel "github.com/3DRX/webrtc-ros-bridge/receiver/signaling_channel"
+	send_peerconnectionchannel "github.com/3DRX/webrtc-ros-bridge/sender/peer_connection_channel"
 	send_roschannel "github.com/3DRX/webrtc-ros-bridge/sender/ros_channel"
 	"github.com/pion/webrtc/v4"
 )
@@ -47,7 +48,11 @@ func videoSender(cfg *config.Config, topicIdx int) {
 		topicIdx,
 		imgChan,
 	)
+	pc := send_peerconnectionchannel.InitPeerConnectionChannel(
+		imgChan,
+	)
 	go cc.Spin()
+	go pc.Spin()
 	select {}
 }
 

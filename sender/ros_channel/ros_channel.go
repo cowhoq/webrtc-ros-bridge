@@ -46,7 +46,6 @@ func (r *ROSChannel) Spin() {
 		"/"+r.cfg.Topics[r.topicIdx].NameIn,
 		nil,
 		func(msg *sensor_msgs_msg.Image, info *rclgo.MessageInfo, err error) {
-			slog.Info("Received image message", "width", msg.Width, "height", msg.Height, "header", msg.Header)
 			r.imgChan <- msg
 		},
 	)
