@@ -100,6 +100,20 @@ int encode_frame(vpx_codec_ctx_t *codec, vpx_image_t *vpx_img, uint8_t **data,
   return -1;
 }
 
+// Function to convert ROS image to VPX image and encode it
+int convert_and_encode(vpx_codec_ctx_t *codec,
+                       const sensor_msgs__msg__Image *ros_img, uint8_t **data,
+                       size_t *data_size) {
+  vpx_image_t vpx_img;
+  ros_to_vpx_image(ros_img, &vpx_img);
+
+  int res = encode_frame(codec, &vpx_img, data, data_size);
+
+  cleanup_vpx_image(&vpx_img);
+
+  return res;
+}
+
 // Don't forget to clean up when done
 void cleanup_vpx_image(vpx_image_t *vpx_img) {
   if (vpx_img->planes[VPX_PLANE_Y]) {

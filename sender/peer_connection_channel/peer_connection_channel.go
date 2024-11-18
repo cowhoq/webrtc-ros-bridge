@@ -3,6 +3,7 @@ package peerconnectionchannel
 /*
 #cgo LDFLAGS: -L. -lvp8encoder -lvpx -lm
 #include "vp8_encoder.h"
+#include "../../receiver/peer_connection_channel/vp8_decoder.h"
 #include <stdlib.h>
 */
 import "C"
@@ -63,49 +64,33 @@ func (pc *PeerConnectionChannel) Spin() {
 
 	for {
 		img := <-pc.imgChan
-		slog.Info(
-			"Received image message",
-			"width", img.Width,
-			"height", img.Height,
-			"header", img.Header,
-		)
 
-		// Allocate memory for the C sensor_msgs__msg__Image structure
-		cImg := (*C.sensor_msgs__msg__Image)(C.malloc(C.sizeof_sensor_msgs__msg__Image))
-		defer C.free(unsafe.Pointer(cImg))
-
-		// Copy data from Go structure to C structure
-		cImg.width = C.uint32_t(img.Width)
-		cImg.height = C.uint32_t(img.Height)
-		cImg.step = C.uint32_t(img.Step)
-		cImg.data.size = C.size_t(len(img.Data))
-		cImg.data.capacity = C.size_t(cap(img.Data))
-		cImg.data.data = (*C.uint8_t)(C.CBytes(img.Data))
-		defer C.free(unsafe.Pointer(cImg.data.data))
-
-		var vpxImg C.vpx_image_t
-		C.ros_to_vpx_image(cImg, &vpxImg)
-
+		var ros_img_c C.sensor_msgs__msg__Image
+		sensor_msgs_msg.ImageTypeSupport.AsCStruct(unsafe.Pointer(&ros_img_c), img)
 		var data *C.uint8_t
 		var dataSize C.size_t
-		if C.encode_frame(&pc.codec, &vpxImg, &data, &dataSize) != 0 {
+		if C.convert_and_encode(&pc.codec, &ros_img_c, &data, &dataSize) != 0 {
 			slog.Error("Failed to encode frame")
 			continue
 		}
-
 		// Write encoded data to WebM file
 		goData := C.GoBytes(unsafe.Pointer(data), C.int(dataSize))
 		videoKeyframe := (goData[0] & 0x1) == 0 // Check if the frame is a keyframe
-
 		// Calculate timeStamp from img.Header
 		timeStampMs := uint32(img.Header.Stamp.Sec)*1000 + img.Header.Stamp.Nanosec/1000000
 		if _, err := pc.writer.Write(videoKeyframe, int64(timeStampMs), goData); err != nil {
 			slog.Error("Failed to write to WebM file", "error", err)
 		}
-
 		// Free the memory allocated for the encoded data
+		C.cleanup_ros_image(&ros_img_c)
 		C.free(unsafe.Pointer(data))
 
-		C.cleanup_vpx_image(&vpxImg)
+		slog.Info(
+			"Received image message",
+			"width", img.Width,
+			"height", img.Height,
+			"header", img.Header,
+			"keyframe", videoKeyframe,
+		)
 	}
 }
