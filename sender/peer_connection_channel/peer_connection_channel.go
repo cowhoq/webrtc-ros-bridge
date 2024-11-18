@@ -59,7 +59,7 @@ func InitPeerConnectionChannel(
 }
 
 func (pc *PeerConnectionChannel) Spin() {
-	// defer pc.writer.Close()
+	defer pc.writer.Close()
 
 	for {
 		img := <-pc.imgChan
@@ -97,11 +97,14 @@ func (pc *PeerConnectionChannel) Spin() {
 		goData := C.GoBytes(unsafe.Pointer(data), C.int(dataSize))
 		videoKeyframe := (goData[0] & 0x1) == 0 // Check if the frame is a keyframe
 
-		// calculate timeStamp from img.Header
+		// Calculate timeStamp from img.Header
 		timeStampMs := uint32(img.Header.Stamp.Sec)*1000 + img.Header.Stamp.Nanosec/1000000
 		if _, err := pc.writer.Write(videoKeyframe, int64(timeStampMs), goData); err != nil {
 			slog.Error("Failed to write to WebM file", "error", err)
 		}
+
+		// Free the memory allocated for the encoded data
+		C.free(unsafe.Pointer(data))
 
 		C.cleanup_vpx_image(&vpxImg)
 	}

@@ -89,6 +89,9 @@ int encode_frame(vpx_codec_ctx_t *codec, vpx_image_t *vpx_img, uint8_t **data,
     if (pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
       *data_size = pkt->data.frame.sz;
       *data = (uint8_t *)malloc(*data_size);
+      if (*data == NULL) {
+        return -1; // Memory allocation failed
+      }
       memcpy(*data, pkt->data.frame.buf, *data_size);
       return 0;
     }
@@ -99,7 +102,16 @@ int encode_frame(vpx_codec_ctx_t *codec, vpx_image_t *vpx_img, uint8_t **data,
 
 // Don't forget to clean up when done
 void cleanup_vpx_image(vpx_image_t *vpx_img) {
-  free(vpx_img->planes[VPX_PLANE_Y]);
-  free(vpx_img->planes[VPX_PLANE_U]);
-  free(vpx_img->planes[VPX_PLANE_V]);
+  if (vpx_img->planes[VPX_PLANE_Y]) {
+    free(vpx_img->planes[VPX_PLANE_Y]);
+    vpx_img->planes[VPX_PLANE_Y] = NULL;
+  }
+  if (vpx_img->planes[VPX_PLANE_U]) {
+    free(vpx_img->planes[VPX_PLANE_U]);
+    vpx_img->planes[VPX_PLANE_U] = NULL;
+  }
+  if (vpx_img->planes[VPX_PLANE_V]) {
+    free(vpx_img->planes[VPX_PLANE_V]);
+    vpx_img->planes[VPX_PLANE_V] = NULL;
+  }
 }
