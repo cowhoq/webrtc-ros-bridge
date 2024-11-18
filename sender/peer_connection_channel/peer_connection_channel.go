@@ -15,19 +15,32 @@ import (
 
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
 	"github.com/at-wat/ebml-go/webm"
+	"github.com/pion/webrtc/v4"
 )
 
 type PeerConnectionChannel struct {
-	imgChan <-chan *sensor_msgs_msg.Image
-	codec   C.vpx_codec_ctx_t
-	writer  webm.BlockWriteCloser
+	imgChan           <-chan *sensor_msgs_msg.Image
+	codec             C.vpx_codec_ctx_t
+	writer            webm.BlockWriteCloser
+	sendSDPChan       <-chan webrtc.SessionDescription
+	recvSDPChan       chan<- webrtc.SessionDescription
+	sendCandidateChan <-chan webrtc.ICECandidateInit
+	recvCandidateChan chan<- webrtc.ICECandidateInit
 }
 
 func InitPeerConnectionChannel(
 	imgChan <-chan *sensor_msgs_msg.Image,
+	sendSDPChan <-chan webrtc.SessionDescription,
+	recvSDPChan chan<- webrtc.SessionDescription,
+	sendCandidateChan <-chan webrtc.ICECandidateInit,
+	recvCandidateChan chan<- webrtc.ICECandidateInit,
 ) *PeerConnectionChannel {
 	pc := &PeerConnectionChannel{
-		imgChan: imgChan,
+		imgChan:           imgChan,
+		sendSDPChan:       sendSDPChan,
+		recvSDPChan:       recvSDPChan,
+		sendCandidateChan: sendCandidateChan,
+		recvCandidateChan: recvCandidateChan,
 	}
 	if C.init_encoder(&pc.codec, 640, 480, 1000) != 0 {
 		panic("Failed to initialize VP8 encoder")

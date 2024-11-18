@@ -8,6 +8,7 @@ import (
 	recv_signalingchannel "github.com/3DRX/webrtc-ros-bridge/receiver/signaling_channel"
 	send_peerconnectionchannel "github.com/3DRX/webrtc-ros-bridge/sender/peer_connection_channel"
 	send_roschannel "github.com/3DRX/webrtc-ros-bridge/sender/ros_channel"
+	send_signalingchannel "github.com/3DRX/webrtc-ros-bridge/sender/signaling_channel"
 	"github.com/pion/webrtc/v4"
 )
 
@@ -30,28 +31,47 @@ func videoReceiver(cfg *config.Config, topicIdx int) {
 		sc.SignalCandidate,
 		imgChan,
 	)
-	cc := recv_roschannel.InitROSChannel(
+	rc := recv_roschannel.InitROSChannel(
 		cfg,
 		topicIdx,
 		imgChan,
 	)
 	go sc.Spin()
 	go pc.Spin()
-	go cc.Spin()
+	go rc.Spin()
 	select {}
 }
 
 func videoSender(cfg *config.Config, topicIdx int) {
 	imgChan := make(chan *sensor_msgs_msg.Image)
-	cc := send_roschannel.InitROSChannel(
+	sendSDPChan := make(chan webrtc.SessionDescription)
+	recvSDPChan := make(chan webrtc.SessionDescription)
+	sendCandidateChan := make(chan webrtc.ICECandidateInit)
+	recvCandidateChan := make(chan webrtc.ICECandidateInit)
+	sc := send_signalingchannel.InitSignalingChannel(
+		cfg,
+		topicIdx,
+		sendSDPChan,
+		recvSDPChan,
+		sendCandidateChan,
+		recvCandidateChan,
+	)
+	haveReceiverPromise := sc.Spin()
+	rc := send_roschannel.InitROSChannel(
 		cfg,
 		topicIdx,
 		imgChan,
 	)
 	pc := send_peerconnectionchannel.InitPeerConnectionChannel(
 		imgChan,
+		sendSDPChan,
+		recvSDPChan,
+		sendCandidateChan,
+		recvCandidateChan,
 	)
-	go cc.Spin()
+	<-haveReceiverPromise
+	haveTopicPromise := rc.Spin()
+	<-haveTopicPromise
 	go pc.Spin()
 	select {}
 }
