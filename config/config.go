@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -22,8 +23,13 @@ type Config struct {
 }
 
 func LoadCfg() *Config {
-	if _, err := os.Stat("wrb.json"); errors.Is(err, os.ErrNotExist) {
-		slog.Info("wrb.json not found, using default config")
+	args := os.Args
+	if len(args) != 2 {
+		fmt.Println("Usage: wrb <config_file>")
+		os.Exit(0)
+	}
+	if _, err := os.Stat(args[1]); errors.Is(err, os.ErrNotExist) {
+		slog.Info(args[1] + " not found, using default config")
 		return &Config{
 			Mode: "receiver",
 			Addr: "localhost:8080",
@@ -36,7 +42,7 @@ func LoadCfg() *Config {
 			},
 		}
 	}
-	f, err := os.Open("wrb.json")
+	f, err := os.Open(args[1])
 	if err != nil {
 		panic(err)
 	}

@@ -24,7 +24,7 @@ go.work.sum
 # env file
 *.env
 
-webrtc-ros-bridge
+wrb
 rclgo_gen/
 *.json
 *.bak
