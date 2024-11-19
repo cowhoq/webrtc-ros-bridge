@@ -3,6 +3,7 @@ package roschannel
 import (
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/3DRX/webrtc-ros-bridge/config"
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
@@ -46,11 +47,16 @@ func (r *ROSChannel) Spin() {
 	defer pub.Close()
 	defer rclgo.Uninit()
 
+	lastTimeStamp := time.Now().UnixMilli()
+
 	for {
 		img := <-r.imgChan
+		now := time.Now().UnixMilli()
 		err := pub.Publish(img)
 		if err != nil {
 			slog.Error("Failed to publish image message", "error", err)
 		}
+		slog.Info("Published image msg", "FPS", 1000/(now-lastTimeStamp))
+		lastTimeStamp = now
 	}
 }
