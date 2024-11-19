@@ -1,9 +1,12 @@
 package rosmediadevicesadapter
 
+// WIP
+
 import (
 	"fmt"
 	"image"
 	"io"
+	"log/slog"
 	"sync"
 
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
@@ -17,18 +20,16 @@ type rosImageAdapter struct {
 	mu        sync.RWMutex
 	lastFrame *image.RGBA
 	doneCh    chan struct{}
+	imgChan   <-chan *sensor_msgs_msg.Image
 }
 
-func init() {
-	Initialize()
-}
-
-func Initialize() {
+func Initialize(imgChan <-chan *sensor_msgs_msg.Image) {
 	adapter := newROSImageAdapter()
+	adapter.imgChan = imgChan
 	driver.GetManager().Register(adapter, driver.Info{
 		Label:      "ros_image_topic",
 		DeviceType: driver.Camera, // or driver.Screen depending on your use case
-		Priority:   driver.PriorityNormal,
+		Priority:   driver.PriorityHigh,
 	})
 }
 
@@ -36,25 +37,40 @@ func newROSImageAdapter() *rosImageAdapter {
 	return &rosImageAdapter{}
 }
 
+func (a *rosImageAdapter) getRgba() (*image.RGBA, error) {
+	img := <-a.imgChan
+	slog.Info(
+		"Send image message",
+		"width", img.Width,
+		"height", img.Height,
+		"header", img.Header,
+	)
+	rgba, err := ROSImageToRGBA(img)
+	if err != nil {
+		return nil, err
+	}
+	return rgba, nil
+}
+
 func (a *rosImageAdapter) Open() error {
 	a.doneCh = make(chan struct{})
+	go func() {
+		for {
+			rgba, err := a.getRgba()
+			if err != nil {
+				slog.Error("Failed to get image", "error", err)
+				return
+			}
+			a.mu.Lock()
+			a.lastFrame = rgba
+			a.mu.Unlock()
+		}
+	}()
 	return nil
 }
 
 func (a *rosImageAdapter) Close() error {
 	close(a.doneCh)
-	return nil
-}
-
-func (a *rosImageAdapter) UpdateFrame(rosImg *sensor_msgs_msg.Image) error {
-	rgba, err := ROSImageToRGBA(rosImg)
-	if err != nil {
-		return fmt.Errorf("failed to convert ROS image: %v", err)
-	}
-
-	a.mu.Lock()
-	a.lastFrame = rgba
-	a.mu.Unlock()
 	return nil
 }
 

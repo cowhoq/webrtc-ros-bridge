@@ -15,7 +15,7 @@ import (
 	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
-	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
+	"github.com/pion/webrtc/v3/pkg/media/samplebuilder"
 )
 
 type WebmSaver struct {
