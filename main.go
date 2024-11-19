@@ -57,6 +57,8 @@ func videoSender(cfg *config.Config, topicIdx int) {
 		recvCandidateChan,
 	)
 	haveReceiverPromise := sc.Spin()
+	<-haveReceiverPromise
+	actions := sc.GetActions()
 	rc := send_roschannel.InitROSChannel(
 		cfg,
 		topicIdx,
@@ -68,10 +70,9 @@ func videoSender(cfg *config.Config, topicIdx int) {
 		recvSDPChan,
 		sendCandidateChan,
 		recvCandidateChan,
+		actions,
 	)
-	<-haveReceiverPromise
-	haveTopicPromise := rc.Spin()
-	<-haveTopicPromise
+	go rc.Spin()
 	go pc.Spin()
 	select {}
 }

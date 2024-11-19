@@ -105,12 +105,11 @@ func (s *SignalingChannel) Spin() {
 	u := url.URL{Scheme: "ws", Host: s.cfg.Addr, Path: "/webrtc"}
 	slog.Info("start spinning", "url", u.String())
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		panic(err)
+	}
 	s.c = c
 	defer c.Close()
-	if err != nil {
-		slog.Error("dial error", "error", err)
-		return
-	}
 	go func() {
 		for {
 			_, message, err := c.ReadMessage()
