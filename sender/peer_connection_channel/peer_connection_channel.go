@@ -12,13 +12,11 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
 	"time"
 	"unsafe"
 
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
 	send_signalingchannel "github.com/3DRX/webrtc-ros-bridge/sender/signaling_channel"
-	"github.com/at-wat/ebml-go/webm"
 	"github.com/pion/interceptor"
 	"github.com/pion/webrtc/v4"
 	"github.com/pion/webrtc/v4/pkg/media"
@@ -39,7 +37,6 @@ type AddVideoTrackAction struct {
 type PeerConnectionChannel struct {
 	imgChan           <-chan *sensor_msgs_msg.Image
 	codec             C.vpx_codec_ctx_t
-	writer            webm.BlockWriteCloser
 	sendSDPChan       chan<- webrtc.SessionDescription
 	recvSDPChan       <-chan webrtc.SessionDescription
 	sendCandidateChan chan<- webrtc.ICECandidateInit
@@ -134,30 +131,6 @@ func InitPeerConnectionChannel(
 	if C.init_encoder(&pc.codec, 640, 480, 1000) != 0 {
 		panic("Failed to initialize VP8 encoder")
 	}
-	file, err := os.Create("video.webm")
-	if err != nil {
-		panic(err)
-	}
-
-	writer, err := webm.NewSimpleBlockWriter(file, []webm.TrackEntry{
-		{
-			Name:            "Video",
-			TrackNumber:     2,
-			TrackUID:        67890,
-			CodecID:         "V_VP8",
-			TrackType:       1,
-			DefaultDuration: 33333333,
-			Video: &webm.Video{
-				PixelWidth:  uint64(640),
-				PixelHeight: uint64(480),
-			},
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	pc.writer = writer[0]
 	return pc
 }
 
@@ -213,7 +186,6 @@ func (pc *PeerConnectionChannel) Spin() {
 		}
 	}()
 
-	defer pc.writer.Close()
 	offer, err := pc.peerConnection.CreateOffer(nil)
 	if err != nil {
 		panic(err)
@@ -245,12 +217,8 @@ func (pc *PeerConnectionChannel) Spin() {
 		goData := C.GoBytes(unsafe.Pointer(data), C.int(dataSize))
 		videoKeyframe := (goData[0] & 0x1) == 0 // Check if the frame is a keyframe
 		// Calculate timeStamp from img.Header
-		timeStampMs := uint32(img.Header.Stamp.Sec)*1000 + img.Header.Stamp.Nanosec/1000000
+		// timeStampMs := uint32(img.Header.Stamp.Sec)*1000 + img.Header.Stamp.Nanosec/1000000
 
-		// Write to file
-		if _, err := pc.writer.Write(videoKeyframe, int64(timeStampMs), goData); err != nil {
-			slog.Error("Failed to write to WebM file", "error", err)
-		}
 		// Write to WebRTC track
 		if err = videoTrack.WriteSample(media.Sample{Data: goData, Duration: time.Second}); err != nil {
 			slog.Error("Failed to write to video track", "error", err)
@@ -261,7 +229,7 @@ func (pc *PeerConnectionChannel) Spin() {
 		C.free(unsafe.Pointer(data))
 
 		slog.Info(
-			"Received image message",
+			"Send image message",
 			"width", img.Width,
 			"height", img.Height,
 			"header", img.Header,
