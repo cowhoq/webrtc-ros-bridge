@@ -6,12 +6,11 @@ import (
 	"log/slog"
 
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
+	rosmediadevicesadapter "github.com/3DRX/webrtc-ros-bridge/ros_mediadevices_adapter"
 	send_signalingchannel "github.com/3DRX/webrtc-ros-bridge/sender/signaling_channel"
 	"github.com/pion/interceptor"
 	"github.com/pion/mediadevices"
 	"github.com/pion/mediadevices/pkg/codec/vpx"
-	_ "github.com/pion/mediadevices/pkg/driver/camera"
-	// _ "github.com/pion/mediadevices/pkg/driver/videotest"
 	"github.com/pion/mediadevices/pkg/prop"
 	"github.com/pion/webrtc/v3"
 )
@@ -29,14 +28,11 @@ type AddVideoTrackAction struct {
 }
 
 type PeerConnectionChannel struct {
-	imgChan           <-chan *sensor_msgs_msg.Image
 	sendSDPChan       chan<- webrtc.SessionDescription
 	recvSDPChan       <-chan webrtc.SessionDescription
 	sendCandidateChan chan<- webrtc.ICECandidateInit
 	recvCandidateChan <-chan webrtc.ICECandidateInit
 	peerConnection    *webrtc.PeerConnection
-	id                string
-	streamId          string
 }
 
 func InitPeerConnectionChannel(
@@ -66,11 +62,10 @@ func InitPeerConnectionChannel(
 	if err := unmarshalAction(rawAddVideoTrack, &addVideoTrackAction); err != nil {
 		panic(err)
 	}
-	id := addVideoTrackAction.Id
-	streamId := addVideoTrackAction.StreamId
 	// TODO: read data from action and use the action to select
 	// ROS topic to send through bridge.
 	// For now, we just send the ROS topic specified in the config.
+	rosmediadevicesadapter.Initialize(imgChan)
 	vp8Params, err := vpx.NewVP8Params()
 	if err != nil {
 		panic(err)
@@ -101,20 +96,11 @@ func InitPeerConnectionChannel(
 
 	mediaStream, err := mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
 		Video: func(constraint *mediadevices.MediaTrackConstraints) {
-			// Query for ideal resolutions
 			constraint.Width = prop.Int(640)
 			constraint.Height = prop.Int(480)
 		},
 		Codec: codecselector,
 	})
-	// mediaStream, err := mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
-	// 	Video: func(c *mediadevices.MediaTrackConstraints) {
-	// 		c.DeviceID = prop.String("ros_image_topic") // Must match the Label from Initialize()
-	// 		c.Width = prop.Int(640)
-	// 		c.Height = prop.Int(480)
-	// 		c.FrameRate = prop.Float(30)
-	// 	},
-	// })
 	if err != nil {
 		panic(err)
 	}
@@ -135,14 +121,11 @@ func InitPeerConnectionChannel(
 	}
 
 	pc := &PeerConnectionChannel{
-		imgChan:           imgChan,
 		sendSDPChan:       sendSDPChan,
 		recvSDPChan:       recvSDPChan,
 		sendCandidateChan: sendCandidateChan,
 		recvCandidateChan: recvCandidateChan,
 		peerConnection:    peerConnection,
-		id:                id,
-		streamId:          streamId,
 	}
 	return pc
 }

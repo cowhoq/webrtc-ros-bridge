@@ -1,6 +1,7 @@
 package roschannel
 
 import (
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -47,16 +48,44 @@ func (r *ROSChannel) Spin() {
 	defer pub.Close()
 	defer rclgo.Uninit()
 
-	lastTimeStamp := time.Now().UnixMilli()
+	const windowSize = 30
+	timestamps := make([]time.Time, windowSize)
+	frameCount := 0
+	idx := 0
+	firstFrame := true
+	lastPrintTime := time.Now()
 
 	for {
 		img := <-r.imgChan
-		now := time.Now().UnixMilli()
+		now := time.Now()
 		err := pub.Publish(img)
 		if err != nil {
 			slog.Error("Failed to publish image message", "error", err)
 		}
-		slog.Info("Published image msg", "FPS", 1000/(now-lastTimeStamp))
-		lastTimeStamp = now
+
+		if firstFrame {
+			timestamps[0] = now
+			firstFrame = false
+			frameCount = 1
+			continue
+		}
+		idx = (idx + 1) % windowSize
+		timestamps[idx] = now
+		if frameCount < windowSize {
+			frameCount++
+		}
+		if now.Sub(lastPrintTime) >= time.Second {
+			if frameCount < 2 {
+				slog.Info("FPS calculation pending, need more frames")
+				continue
+			}
+			oldestIdx := (idx - frameCount + 1 + windowSize) % windowSize
+			duration := timestamps[idx].Sub(timestamps[oldestIdx])
+			if duration.Seconds() > 0 {
+				fps := float64(frameCount-1) / duration.Seconds()
+				slog.Info("Current FPS", "fps", fmt.Sprintf("%.2f", fps))
+			}
+			lastPrintTime = now
+		}
 	}
 }
