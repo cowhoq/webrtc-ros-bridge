@@ -11,11 +11,11 @@ import (
 	"time"
 	"unsafe"
 
-	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/ros_channel/msgs/sensor_msgs/msg"
+	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
 	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
-	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
+	"github.com/pion/webrtc/v3/pkg/media/samplebuilder"
 )
 
 type WebmSaver struct {
@@ -26,10 +26,10 @@ type WebmSaver struct {
 	lastVideoTimestamp uint32
 	codecCtx           C.vpx_codec_ctx_t
 	codecCreated       bool
-	imgChan            chan<- sensor_msgs_msg.Image
+	imgChan            chan<- *sensor_msgs_msg.Image
 }
 
-func newWebmSaver(imgChan chan<- sensor_msgs_msg.Image) *WebmSaver {
+func newWebmSaver(imgChan chan<- *sensor_msgs_msg.Image) *WebmSaver {
 	return &WebmSaver{
 		vp8Builder:       samplebuilder.New(200, &codecs.VP8Packet{}, 90000),
 		h264JitterBuffer: jitterbuffer.New(),
@@ -83,7 +83,7 @@ func (s *WebmSaver) PushVP8(rtpPacket *rtp.Packet) {
 		C.vpx_to_ros_image(img, &ros_img_c)
 		sensor_msgs_msg.ImageTypeSupport.AsGoStruct(&ros_img, unsafe.Pointer(&ros_img_c))
 		C.cleanup_ros_image(&ros_img_c)
-		s.imgChan <- ros_img
+		s.imgChan <- &ros_img
 	}
 }
 

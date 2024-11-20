@@ -76,7 +76,7 @@ void vpx_to_ros_image(const vpx_image_t *vpx_img,
       G = G < 0 ? 0 : (G > 255 ? 255 : G);
       B = B < 0 ? 0 : (B > 255 ? 255 : B);
 
-      // Write to destination in BGR order
+      // Write to destination in RGB order
       int dest_idx = (y * ros_img->width + x) * 3;
       seq->data[dest_idx + 0] = (unsigned char)R;
       seq->data[dest_idx + 1] = (unsigned char)G;

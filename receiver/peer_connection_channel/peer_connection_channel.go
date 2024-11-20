@@ -5,10 +5,10 @@ import (
 	"log/slog"
 	"time"
 
-	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/ros_channel/msgs/sensor_msgs/msg"
+	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
-	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v3"
 )
 
 type PeerConnectionChannel struct {
@@ -16,9 +16,8 @@ type PeerConnectionChannel struct {
 	sdpReplyChan    chan<- webrtc.SessionDescription
 	candidateChan   <-chan webrtc.ICECandidateInit
 	peerConnection  *webrtc.PeerConnection
-	m               *webrtc.MediaEngine
 	signalCandidate func(c webrtc.ICECandidateInit) error
-	imgChan         chan<- sensor_msgs_msg.Image
+	imgChan         chan<- *sensor_msgs_msg.Image
 }
 
 func registerHeaderExtensionURI(m *webrtc.MediaEngine, uris []string) {
@@ -41,7 +40,7 @@ func InitPeerConnectionChannel(
 	sdpReplyChan chan<- webrtc.SessionDescription,
 	candidateChan <-chan webrtc.ICECandidateInit,
 	signalCandidate func(c webrtc.ICECandidateInit) error,
-	imgChan chan<- sensor_msgs_msg.Image,
+	imgChan chan<- *sensor_msgs_msg.Image,
 ) *PeerConnectionChannel {
 	m := &webrtc.MediaEngine{}
 	// Register VP8
@@ -84,7 +83,6 @@ func InitPeerConnectionChannel(
 		sdpReplyChan:    sdpReplyChan,
 		candidateChan:   candidateChan,
 		peerConnection:  peerConnection,
-		m:               m,
 		signalCandidate: signalCandidate,
 		imgChan:         imgChan,
 	}

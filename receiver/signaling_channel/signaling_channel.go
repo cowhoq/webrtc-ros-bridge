@@ -7,13 +7,15 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/3DRX/webrtc-ros-bridge/config"
 	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc/v4"
+	"github.com/pion/webrtc/v3"
 	"golang.org/x/exp/rand"
 )
 
 type SignalingChannel struct {
-	addr          string
+	cfg           *config.Config
+	topicIdx      int
 	recv          chan []byte
 	c             *websocket.Conn
 	sdpChan       chan<- webrtc.SessionDescription
@@ -34,13 +36,15 @@ type ICECandidateJSON struct {
 }
 
 func InitSignalingChannel(
-	addr *string,
+	cfg *config.Config,
+	topicIdx int,
 	sdpChan chan webrtc.SessionDescription,
 	sdpReplyChan <-chan webrtc.SessionDescription,
 	candidateChan chan<- webrtc.ICECandidateInit,
 ) *SignalingChannel {
 	return &SignalingChannel{
-		addr:          *addr,
+		cfg:           cfg,
+		topicIdx:      topicIdx,
 		recv:          make(chan []byte),
 		c:             nil,
 		sdpChan:       sdpChan,
@@ -53,7 +57,7 @@ func newStreamId() string {
 	return "webrtc_ros-stream-" + strconv.Itoa(rand.Intn(1000000000))
 }
 
-func composeActions() map[string]interface{} {
+func (s *SignalingChannel) composeActions() map[string]interface{} {
 	streamId := newStreamId()
 	action := map[string]interface{}{
 		"type": "configure",
@@ -66,7 +70,7 @@ func composeActions() map[string]interface{} {
 				"type":      "add_video_track",
 				"stream_id": streamId,
 				"id":        streamId + "/subscribed_video",
-				"src":       "ros_image:/image_raw",
+				"src":       "ros_image:/" + s.cfg.Topics[s.topicIdx].NameIn,
 			},
 		},
 	}
@@ -98,15 +102,14 @@ func (s *SignalingChannel) SignalCandidate(candidate webrtc.ICECandidateInit) er
 }
 
 func (s *SignalingChannel) Spin() {
-	u := url.URL{Scheme: "ws", Host: s.addr, Path: "/webrtc"}
+	u := url.URL{Scheme: "ws", Host: s.cfg.Addr, Path: "/webrtc"}
 	slog.Info("start spinning", "url", u.String())
 	c, _, err := websocket.DefaultDialer.Dial(u.String(), nil)
+	if err != nil {
+		panic(err)
+	}
 	s.c = c
 	defer c.Close()
-	if err != nil {
-		slog.Error("dial error", "error", err)
-		return
-	}
 	go func() {
 		for {
 			_, message, err := c.ReadMessage()
@@ -119,7 +122,7 @@ func (s *SignalingChannel) Spin() {
 	}()
 	slog.Info("dial success")
 
-	cfgMessage, err := toTextMessage(composeActions())
+	cfgMessage, err := toTextMessage(s.composeActions())
 	if err != nil {
 		slog.Error("compose message error", "error", err)
 		return
