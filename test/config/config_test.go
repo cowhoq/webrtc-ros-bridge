@@ -2,7 +2,6 @@ package config_test
 
 import (
 	"testing"
-	// 假设你的 config 包在项目根目录下的 "config" 文件夹
 	"github.com/3DRX/webrtc-ros-bridge/config"
 )
 
