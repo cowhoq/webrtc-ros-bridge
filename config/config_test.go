@@ -1,22 +1,41 @@
-package config_test
+package config
 
 import (
 	"testing"
-	"github.com/3DRX/webrtc-ros-bridge/config"
 )
 
 func TestCheckfunc(t *testing.T) {
 	tests := []struct {
 		name     string
-		cfg      *config.Config
+		cfg      *Config
 		expected bool
 	}{
 		{
 			name: "valid config",
-			cfg: &config.Config{
+			cfg: &Config{
 				Mode: "receiver",
 				Addr: "10.3.9.3:8080",
-				Topics: []config.TopicConfig{
+				Topics: []TopicConfig{
+					{
+						NameIn:  "image_raw",
+						NameOut: "image",
+						Type:    "sensor_msgs/msg/Image",
+					},
+					{
+						NameIn:  "image_raw",
+						NameOut: "image",
+						Type:    "sensor_msgs/msg/Image",
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "valid config with hostname",
+			cfg: &Config{
+				Mode: "receiver",
+				Addr: "localhost:8080",
+				Topics: []TopicConfig{
 					{
 						NameIn:  "image_raw",
 						NameOut: "image",
@@ -33,10 +52,10 @@ func TestCheckfunc(t *testing.T) {
 		},
 		{
 			name: "invalid config",
-			cfg: &config.Config{
+			cfg: &Config{
 				Mode: "",
 				Addr: "",
-				Topics: []config.TopicConfig{
+				Topics: []TopicConfig{
 					{
 						NameIn:  "image_raw",
 						NameOut: "image",
@@ -50,9 +69,13 @@ func TestCheckfunc(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := config.CheckCfg(tt.cfg)
-			if msg.Status != tt.expected {
-				t.Errorf("TestCheckfunc failed: expected status %v, got %v", tt.expected, msg.Status)
+			err := checkCfg(tt.cfg)
+			msg := true
+			if err != nil {
+				msg = false
+			}
+			if msg != tt.expected {
+				t.Errorf("TestCheckfunc failed: expected status %v, got %v", tt.expected, err.Error())
 			}
 		})
 	}

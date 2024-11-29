@@ -7,9 +7,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"net"
+	"os"
 	"regexp"
+	"strings"
 )
 
 type TopicConfig struct {
@@ -24,12 +25,7 @@ type Config struct {
 	Topics []TopicConfig `json:"topics"`
 }
 
-type Check_msg struct {
-	Status bool
-	Msg string
-}
-
-func IsTopicNameValid(topic_name *string) bool {
+func isTopicNameValid(topic_name *string) bool {
 	re := regexp.MustCompile(`^[a-z0-9_\-]+(/[a-z0-9_\-]+)*$`)
 	if *topic_name == "" {
 		return false
@@ -37,55 +33,103 @@ func IsTopicNameValid(topic_name *string) bool {
 	return re.MatchString(*topic_name)
 }
 
-func IsValidIp(addr *string) bool {
-	// 分离主机名和端口
+func isValidIp(addr *string) bool {
+	// Try to separate hostname and port
 	host, _, err := net.SplitHostPort(*addr)
 	if err != nil {
+		// If splitting fails, assume the entire string is a host
+		host = *addr
+	}
+
+	// First try to parse as IP address
+	ip := net.ParseIP(host)
+	if ip != nil {
+		// If it's a valid IP, check if it's IPv4
+		return ip.To4() != nil
+	}
+
+	// Check if it's a valid hostname
+	if isValidHostname(host) {
+		return true
+	}
+
+	// If not a valid hostname, try to resolve it
+	ips, err := net.LookupIP(host)
+	if err != nil || len(ips) == 0 {
 		return false
 	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		// 主机名 + port
-		ips, err := net.LookupIP(host)
-		if err != nil || len(ips) == 0 {
+
+	// Check if any of the resolved IPs is IPv4
+	for _, ip := range ips {
+		if ip.To4() != nil {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isValidHostname(host string) bool {
+	// RFC 1123 hostname validation
+	if len(host) > 255 {
+		return false
+	}
+	// Host should not start or end with a dot
+	if host[0] == '.' || host[len(host)-1] == '.' {
+		return false
+	}
+	// Split hostname into labels
+	labels := strings.Split(host, ".")
+	// A valid hostname must have at least one label
+	if len(labels) < 1 {
+		return false
+	}
+	for _, label := range labels {
+		if len(label) < 1 || len(label) > 63 {
 			return false
 		}
-		ip = ips[0]
-	}
-	if ip.To4() == nil {
-		return false
+		// RFC 1123 allows hostname labels to start with a digit
+		// Only allow alphanumeric characters and hyphens
+		for i, c := range label {
+			if !((c >= 'a' && c <= 'z') ||
+				(c >= 'A' && c <= 'Z') ||
+				(c >= '0' && c <= '9') ||
+				(c == '-' && i > 0 && i < len(label)-1)) { // hyphen cannot be first or last
+				return false
+			}
+		}
 	}
 	return true
 }
 
-func CheckCfg(c *Config ) *Check_msg{
+func checkCfg(c *Config) error {
 	if c == nil {
-		return &Check_msg{false, "get a null pointer!"}
+		return fmt.Errorf("get a null pointer!")
 	}
-	res := true	
+	res := true
 	// Mode
 	res = res && (c.Mode == "sender" || c.Mode == "receiver")
 	if res == false {
-		return &Check_msg{false, "wrong Mode syntax, expected \"sender\" or \"receiver\", but find \"" + c.Mode + "\""}
+		return fmt.Errorf("wrong Mode syntax, expected \"sender\" or \"receiver\", but find \"" + c.Mode + "\"")
 	}
 	// ip addr
-	res = res && IsValidIp(&c.Addr)
+	res = res && isValidIp(&c.Addr)
 	if res == false {
-		return &Check_msg{false, "invalid ipv4 addr \"" + c.Addr + "\""}
+		return fmt.Errorf("invalid ipv4 addr \"" + c.Addr + "\"")
 	}
 	// Topic
-	for _, topic := range(c.Topics) {
-		res = res && IsTopicNameValid(&(topic.NameIn))
-		res = res && IsTopicNameValid(&(topic.NameOut))
+	for _, topic := range c.Topics {
+		res = res && isTopicNameValid(&(topic.NameIn))
+		res = res && isTopicNameValid(&(topic.NameOut))
 		if res == false {
-			return &Check_msg{false, "wrong topic name format: \"" + topic.NameIn + "\" or \"" + topic.NameOut + "\""}
+			return fmt.Errorf("wrong topic name format: \"" + topic.NameIn + "\" or \"" + topic.NameOut + "\"")
 		}
 		res = res && (topic.Type == "sensor_msgs/msg/Image")
 		if !res {
-			return &Check_msg{false, "wrong topic msg type, expected \"sensor_msgs/msg/Image\", but find \"" + topic.Type + "\""}
+			return fmt.Errorf("wrong topic msg type, expected \"sensor_msgs/msg/Image\", but find \"" + topic.Type + "\"")
 		}
 	}
-	return &Check_msg{true, ""};
+	return nil
 }
 
 func LoadCfg() *Config {
@@ -127,12 +171,12 @@ func LoadCfg() *Config {
 	if err != nil {
 		panic(err)
 	}
-	// TODO: validate config
-	check_msg := CheckCfg(c)
-	if check_msg.Status {
-		return c
-	} else {
-		fmt.Println("[error] " + check_msg.Msg)
-		return nil
+	err = checkCfg(c)
+	if err != nil {
+		panic(err)
 	}
+
+	// Print config
+	slog.Info("config loaded", "config", c)
+	return c
 }
