@@ -13,6 +13,10 @@ receiver/peer_connection_channel/libvp8decoder.so: receiver/peer_connection_chan
 receiver/ros_channel/msgs cgo-flags.env: scripts/filter-root-path.sh
 	go run github.com/tiiuae/rclgo/cmd/rclgo-gen generate -d rclgo_gen --root-path=$(shell ./scripts/filter-root-path.sh)
 
-.PHONY: clean
+test: receiver/peer_connection_channel/libvp8decoder.so rclgo_gen cgo-flags.env
+	CGO_CFLAGS=$(CGO_CFLAGS) CGO_LDFLAGS=$(CGO_LDFLAGS) go test `go list ./... | grep -v "/rclgo_gen"`
+
 clean:
-	rm -rf wrb peer_connection_channel/libvp8decoder.so ros_channel/msgs cgo-flags.env
+	rm -rf wrb peer_connection_channel/libvp8decoder.so ros_channel/msgs cgo-flags.env rclgo_gen
+
+.PHONY: test clean
