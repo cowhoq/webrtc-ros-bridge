@@ -37,10 +37,12 @@ jobs:
 
     - name: Source ROS
       run: |
-        source /opt/ros/humble/setup.bash
 
     - name: Install Go dependencies
       run: go mod download
 
     - name: Run tests
-      run: make test
+      shell: bash
+      run: |
+        source /opt/ros/humble/setup.bash
+        make test
