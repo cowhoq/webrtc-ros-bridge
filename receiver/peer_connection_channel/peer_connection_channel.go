@@ -9,6 +9,8 @@ import (
 	"github.com/pion/interceptor"
 	"github.com/pion/rtcp"
 	"github.com/pion/webrtc/v3"
+	"github.com/tiiuae/rclgo/pkg/rclgo"
+	"github.com/tiiuae/rclgo/pkg/rclgo/types"
 )
 
 type PeerConnectionChannel struct {
@@ -17,7 +19,7 @@ type PeerConnectionChannel struct {
 	candidateChan   <-chan webrtc.ICECandidateInit
 	peerConnection  *webrtc.PeerConnection
 	signalCandidate func(c webrtc.ICECandidateInit) error
-	imgChan         chan<- *sensor_msgs_msg.Image
+	messageChan     chan<- types.Message
 }
 
 func registerHeaderExtensionURI(m *webrtc.MediaEngine, uris []string) {
@@ -40,7 +42,7 @@ func InitPeerConnectionChannel(
 	sdpReplyChan chan<- webrtc.SessionDescription,
 	candidateChan <-chan webrtc.ICECandidateInit,
 	signalCandidate func(c webrtc.ICECandidateInit) error,
-	imgChan chan<- *sensor_msgs_msg.Image,
+	messageChan chan<- types.Message,
 ) *PeerConnectionChannel {
 	m := &webrtc.MediaEngine{}
 	// Register VP8
@@ -84,7 +86,7 @@ func InitPeerConnectionChannel(
 		candidateChan:   candidateChan,
 		peerConnection:  peerConnection,
 		signalCandidate: signalCandidate,
-		imgChan:         imgChan,
+		messageChan:     messageChan,
 	}
 }
 
@@ -117,7 +119,7 @@ func handleSignalingMessage(pc *PeerConnectionChannel) {
 }
 
 func (pc *PeerConnectionChannel) Spin() {
-	webmSaver := newWebmSaver(pc.imgChan)
+	webmSaver := newWebmSaver(pc.messageChan)
 	_, err := pc.peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo,
 		webrtc.RTPTransceiverInit{
 			Direction: webrtc.RTPTransceiverDirectionRecvonly,
@@ -155,6 +157,26 @@ func (pc *PeerConnectionChannel) Spin() {
 			}
 			webmSaver.PushVP8(rtp)
 		}
+	})
+	pc.peerConnection.OnDataChannel(func(d *webrtc.DataChannel) {
+		d.OnMessage(func(msg webrtc.DataChannelMessage) {
+			serializedMsg := msg.Data
+			sensorMsg, err := rclgo.Deserialize(serializedMsg, sensor_msgs_msg.LaserScanTypeSupport)
+			if err != nil {
+				slog.Error("failed to deserialize sensor message", "error", err)
+				return
+			}
+			laserScanMsg, ok := sensorMsg.(*sensor_msgs_msg.LaserScan)
+			if !ok {
+				slog.Error("failed to cast sensor message to LaserScan")
+				return
+			}
+			slog.Info("datachannel message", "frame ID", laserScanMsg.Header.FrameId)
+		})
+		d.OnOpen(func() {
+			slog.Info("datachannel open", "label", d.Label(), "ID", d.ID())
+			d.SendText("Hello from receiver!")
+		})
 	})
 	go handleSignalingMessage(pc)
 }

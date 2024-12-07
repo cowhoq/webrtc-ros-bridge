@@ -13,6 +13,8 @@ import (
 	"github.com/pion/mediadevices/pkg/codec/vpx"
 	"github.com/pion/mediadevices/pkg/prop"
 	"github.com/pion/webrtc/v3"
+	"github.com/tiiuae/rclgo/pkg/rclgo"
+	"github.com/tiiuae/rclgo/pkg/rclgo/types"
 )
 
 type AddStreamAction struct {
@@ -28,6 +30,9 @@ type AddVideoTrackAction struct {
 }
 
 type PeerConnectionChannel struct {
+	imgChan           <-chan *sensor_msgs_msg.Image
+	sensorChan        <-chan types.Message
+	chanDispatcher    func()
 	sendSDPChan       chan<- webrtc.SessionDescription
 	recvSDPChan       <-chan webrtc.SessionDescription
 	sendCandidateChan chan<- webrtc.ICECandidateInit
@@ -36,7 +41,7 @@ type PeerConnectionChannel struct {
 }
 
 func InitPeerConnectionChannel(
-	imgChan <-chan *sensor_msgs_msg.Image,
+	messageChan <-chan types.Message,
 	sendSDPChan chan<- webrtc.SessionDescription,
 	recvSDPChan <-chan webrtc.SessionDescription,
 	sendCandidateChan chan<- webrtc.ICECandidateInit,
@@ -65,6 +70,11 @@ func InitPeerConnectionChannel(
 	// TODO: read data from action and use the action to select
 	// ROS topic to send through bridge.
 	// For now, we just send the ROS topic specified in the config.
+
+	// create a dispatch goroutine to split image message from other sensor messages
+	imgChan := make(chan *sensor_msgs_msg.Image, 10)
+	sensorChan := make(chan types.Message, 10)
+
 	rosmediadevicesadapter.Initialize(imgChan)
 	vp8Params, err := vpx.NewVP8Params()
 	if err != nil {
@@ -126,6 +136,19 @@ func InitPeerConnectionChannel(
 		sendCandidateChan: sendCandidateChan,
 		recvCandidateChan: recvCandidateChan,
 		peerConnection:    peerConnection,
+		imgChan:           imgChan,
+		sensorChan:        sensorChan,
+		chanDispatcher: func() {
+			for {
+				msg := <-messageChan
+				switch msg.(type) {
+				case *sensor_msgs_msg.Image:
+					imgChan <- msg.(*sensor_msgs_msg.Image)
+				default:
+					sensorChan <- msg
+				}
+			}
+		},
 	}
 	return pc
 }
@@ -140,6 +163,28 @@ func (pc *PeerConnectionChannel) handleRemoteICECandidate() {
 }
 
 func (pc *PeerConnectionChannel) Spin() {
+	go pc.chanDispatcher()
+
+	datachannel, err := pc.peerConnection.CreateDataChannel("data", nil)
+	if err != nil {
+		panic(err)
+	}
+	datachannel.OnOpen(func() {
+		slog.Info("datachannel open", "label", datachannel.Label(), "ID", datachannel.ID())
+		for {
+			sensorMsg := <-pc.sensorChan
+			serializedMsg, err := rclgo.Serialize(sensorMsg)
+			if err != nil {
+				slog.Error("failed to serialize sensor message", "error", err)
+				continue
+			}
+			datachannel.Send(serializedMsg)
+		}
+	})
+	datachannel.OnMessage(func(msg webrtc.DataChannelMessage) {
+		slog.Info("datachannel message", "data", string(msg.Data))
+	})
+
 	offer, err := pc.peerConnection.CreateOffer(nil)
 	if err != nil {
 		panic(err)
