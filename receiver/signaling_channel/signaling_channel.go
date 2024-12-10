@@ -9,7 +9,7 @@ import (
 
 	"github.com/3DRX/webrtc-ros-bridge/config"
 	"github.com/gorilla/websocket"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"golang.org/x/exp/rand"
 )
 

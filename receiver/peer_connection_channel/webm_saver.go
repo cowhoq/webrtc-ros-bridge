@@ -12,10 +12,9 @@ import (
 	"unsafe"
 
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
-	"github.com/pion/interceptor/pkg/jitterbuffer"
 	"github.com/pion/rtp"
 	"github.com/pion/rtp/codecs"
-	"github.com/pion/webrtc/v3/pkg/media/samplebuilder"
+	"github.com/pion/webrtc/v4/pkg/media/samplebuilder"
 	"github.com/tiiuae/rclgo/pkg/rclgo/types"
 )
 
@@ -23,7 +22,6 @@ type WebmSaver struct {
 	vp8Builder     *samplebuilder.SampleBuilder
 	videoTimestamp time.Duration
 
-	h264JitterBuffer   *jitterbuffer.JitterBuffer
 	lastVideoTimestamp uint32
 	codecCtx           C.vpx_codec_ctx_t
 	codecCreated       bool
@@ -32,10 +30,9 @@ type WebmSaver struct {
 
 func newWebmSaver(imgChan chan<- types.Message) *WebmSaver {
 	return &WebmSaver{
-		vp8Builder:       samplebuilder.New(200, &codecs.VP8Packet{}, 90000),
-		h264JitterBuffer: jitterbuffer.New(),
-		imgChan:          imgChan,
-		codecCreated:     false,
+		vp8Builder:   samplebuilder.New(200, &codecs.VP8Packet{}, 90000),
+		imgChan:      imgChan,
+		codecCreated: false,
 	}
 }
 
