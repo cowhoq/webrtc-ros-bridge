@@ -8,7 +8,7 @@ import (
 	send_peerconnectionchannel "github.com/3DRX/webrtc-ros-bridge/sender/peer_connection_channel"
 	send_roschannel "github.com/3DRX/webrtc-ros-bridge/sender/ros_channel"
 	send_signalingchannel "github.com/3DRX/webrtc-ros-bridge/sender/signaling_channel"
-	"github.com/pion/webrtc/v3"
+	"github.com/pion/webrtc/v4"
 	"github.com/tiiuae/rclgo/pkg/rclgo/types"
 )
 
