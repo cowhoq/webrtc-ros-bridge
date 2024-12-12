@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-
+	"github.com/3DRX/webrtc-ros-bridge/config"
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
 	rosmediadevicesadapter "github.com/3DRX/webrtc-ros-bridge/ros_mediadevices_adapter"
 	send_signalingchannel "github.com/3DRX/webrtc-ros-bridge/sender/signaling_channel"
@@ -47,6 +47,7 @@ func InitPeerConnectionChannel(
 	sendCandidateChan chan<- webrtc.ICECandidateInit,
 	recvCandidateChan <-chan webrtc.ICECandidateInit,
 	action *send_signalingchannel.Action,
+	imgSpec *config.ImageSpecifications,
 ) *PeerConnectionChannel {
 	// parse action
 	if action.Type != "configure" {
@@ -74,8 +75,15 @@ func InitPeerConnectionChannel(
 	// create a dispatch goroutine to split image message from other sensor messages
 	imgChan := make(chan *sensor_msgs_msg.Image, 10)
 	sensorChan := make(chan types.Message, 10)
+	var imgWidth, imgHeight int = 640, 480
+	var frameRate float64 = 30.00
+	if imgSpec.Width != 0 && imgSpec.Height != 0  && imgSpec.FrameRate != 0 {
+		imgWidth = imgSpec.Width
+		imgHeight = imgSpec.Height
+		frameRate = imgSpec.FrameRate
+	}
 
-	rosmediadevicesadapter.Initialize(imgChan)
+	rosmediadevicesadapter.Initialize(imgChan, imgWidth, imgHeight, frameRate)
 	vp8Params, err := vpx.NewVP8Params()
 	if err != nil {
 		panic(err)
@@ -106,8 +114,9 @@ func InitPeerConnectionChannel(
 
 	mediaStream, err := mediadevices.GetUserMedia(mediadevices.MediaStreamConstraints{
 		Video: func(constraint *mediadevices.MediaTrackConstraints) {
-			constraint.Width = prop.Int(640)
-			constraint.Height = prop.Int(480)
+			constraint.Width = prop.Int(imgWidth)
+			constraint.Height = prop.Int(imgHeight)
+			constraint.FrameRate = prop.Float(frameRate)
 		},
 		Codec: codecselector,
 	})
@@ -215,4 +224,18 @@ func unmarshalAction(rawAction interface{}, action interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func checkImgSpec(cfg *config.Config) [2]int {
+	tmp := cfg.Topics[0].ImgSpec
+
+	width, height := 640, 480
+	if tmp.Width != 0 && tmp.Height!= 0 {
+		width = tmp.Width
+		height = tmp.Height
+	}
+	return [2]int{
+		width,
+		height,
+	}
 }

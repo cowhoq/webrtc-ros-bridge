@@ -1,6 +1,6 @@
 module github.com/3DRX/webrtc-ros-bridge
 
-go 1.23.1
+go 1.23
 
 require (
 	github.com/gorilla/websocket v1.5.3
