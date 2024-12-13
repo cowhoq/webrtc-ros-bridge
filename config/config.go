@@ -16,9 +16,9 @@ import (
 )
 
 type ImageSpecifications struct {
-	Width      int      `json:"Width"`
-	Height     int      `json:"Height"`
-	FrameRate  float64  `json:"FrameRate"`
+	Width      int      `json:"width"`
+	Height     int      `json:"height"`
+	FrameRate  float64  `json:"frame_rate"`
 }
 type TopicConfig struct {
 	NameIn  string              `json:"name_in"`
