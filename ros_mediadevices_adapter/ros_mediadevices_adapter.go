@@ -16,10 +16,13 @@ type rosImageAdapter struct {
 	lastFrame *image.RGBA
 	doneCh    chan struct{}
 	imgChan   <-chan *sensor_msgs_msg.Image
+	imgWidth  int
+	imgHeight int
+	frameRate float64
 }
 
-func Initialize(imgChan <-chan *sensor_msgs_msg.Image) {
-	adapter := newROSImageAdapter()
+func Initialize(imgChan <-chan *sensor_msgs_msg.Image, width, height int, frameRate float64) {
+	adapter := newROSImageAdapter(width, height, frameRate)
 	adapter.imgChan = imgChan
 	driver.GetManager().Register(adapter, driver.Info{
 		Label:      "ros_image_topic",
@@ -28,8 +31,8 @@ func Initialize(imgChan <-chan *sensor_msgs_msg.Image) {
 	})
 }
 
-func newROSImageAdapter() *rosImageAdapter {
-	return &rosImageAdapter{}
+func newROSImageAdapter(width, height int, frameRate float64) *rosImageAdapter {
+	return &rosImageAdapter{imgWidth: width, imgHeight: height, frameRate: frameRate}
 }
 
 func (a *rosImageAdapter) getRgba() (*image.RGBA, error) {
@@ -70,9 +73,10 @@ func (a *rosImageAdapter) VideoRecord(selectedProp prop.Media) (video.Reader, er
 func (a *rosImageAdapter) Properties() []prop.Media {
 	supportedProp := prop.Media{
 		Video: prop.Video{
-			Width:       640,
-			Height:      480,
+			Width:       a.imgWidth,
+			Height:      a.imgHeight,
 			FrameFormat: frame.FormatRGBA,
+			FrameRate:   float32(a.frameRate),
 		},
 	}
 	return []prop.Media{supportedProp}

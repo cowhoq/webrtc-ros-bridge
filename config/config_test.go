@@ -20,11 +20,21 @@ func TestCheckfunc(t *testing.T) {
 						NameIn:  "image_raw",
 						NameOut: "image",
 						Type:    "sensor_msgs/msg/Image",
+						ImgSpec: ImageSpecifications{
+							Width:     640,
+							Height:    480,
+							FrameRate: 30,
+						},
 					},
 					{
 						NameIn:  "image_raw",
 						NameOut: "image",
 						Type:    "sensor_msgs/msg/Image",
+						ImgSpec: ImageSpecifications{
+							Width:     640,
+							Height:    480,
+							FrameRate: 29.97,
+						},
 					},
 				},
 			},
@@ -40,11 +50,26 @@ func TestCheckfunc(t *testing.T) {
 						NameIn:  "image_raw",
 						NameOut: "image",
 						Type:    "sensor_msgs/msg/Image",
+						ImgSpec: ImageSpecifications{
+							Width:     0,
+							Height:    480,
+							FrameRate: 29.97,
+						},
 					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "valid config",
+			cfg: &Config{
+				Mode: "receiver",
+				Addr: "localhost:8080",
+				Topics: []TopicConfig{
 					{
 						NameIn:  "image_raw",
 						NameOut: "image",
-						Type:    "sensor_msgs/msg/Image",
+						Type:    "sensor_msgs/msg/LaserScan",
 					},
 				},
 			},
@@ -60,6 +85,11 @@ func TestCheckfunc(t *testing.T) {
 						NameIn:  "image_raw",
 						NameOut: "image",
 						Type:    "sensor_msgs/msg/Image",
+					},
+					{
+						NameIn:  "image_raw",
+						NameOut: "image",
+						Type:    "sensor_msgs/msg/LaserScan",
 					},
 				},
 			},

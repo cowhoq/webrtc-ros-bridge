@@ -15,10 +15,16 @@ import (
 	"github.com/3DRX/webrtc-ros-bridge/consts"
 )
 
+type ImageSpecifications struct {
+	Width      int      `json:"Width"`
+	Height     int      `json:"Height"`
+	FrameRate  float64  `json:"FrameRate"`
+}
 type TopicConfig struct {
-	NameIn  string `json:"name_in"`
-	NameOut string `json:"name_out"`
-	Type    string `json:"type"` // only "sensor_msgs/msg/Image" is supported
+	NameIn  string              `json:"name_in"`
+	NameOut string              `json:"name_out"`
+	Type    string              `json:"type"`       // only "sensor_msgs/msg/Image" is supported
+	ImgSpec ImageSpecifications `json:"image_spec"` // only valid when type is "Image"
 }
 
 type Config struct {
@@ -116,7 +122,12 @@ func checkCfg(c *Config) error {
 			return fmt.Errorf("wrong topic name format: \"" + topic.NameIn + "\" or \"" + topic.NameOut + "\"")
 		}
 		switch topic.Type {
-		case consts.MSG_IMAGE, consts.MSG_LASER_SCAN:
+		case consts.MSG_IMAGE:
+			tmp := topic.ImgSpec
+			if !(tmp.Width > 0 && tmp.Height > 0 && tmp.FrameRate > 0) {
+				return fmt.Errorf(fmt.Sprintf("wrong params: \"%d %d %f\"", tmp.Width, tmp.Height, tmp.FrameRate))
+			}
+		case consts.MSG_LASER_SCAN:
 			// check passed
 		default:
 			return fmt.Errorf("unsupported topic type: \"" + topic.Type + "\"")
@@ -134,13 +145,18 @@ func LoadCfg() *Config {
 	if _, err := os.Stat(args[1]); errors.Is(err, os.ErrNotExist) {
 		slog.Info(args[1] + " not found, using default config")
 		return &Config{
-			Mode: "receiver",
+			Mode: "sender",
 			Addr: "localhost:8080",
 			Topics: []TopicConfig{
 				{
 					NameIn:  "image_raw",
 					NameOut: "image",
 					Type:    "sensor_msgs/msg/Image",
+					ImgSpec: ImageSpecifications{
+						Width:     1920,
+						Height:    1080,
+						FrameRate: 30,
+					},
 				},
 			},
 		}

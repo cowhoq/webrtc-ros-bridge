@@ -71,6 +71,7 @@ func sender(cfg *config.Config) {
 		sendCandidateChan,
 		recvCandidateChan,
 		actions,
+		&(cfg.Topics[0].ImgSpec),
 	)
 	go pc.Spin()
 	select {}
