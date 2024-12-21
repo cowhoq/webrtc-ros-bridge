@@ -64,7 +64,7 @@ Secondly, you can configure the input topic name, the qos profile if necessary, 
 
 ### Receiver
 
-You have to configure the output topic name, the qos profile if necessary, otherwise we will use default qos profile like the following.
+Like the sender.
 
 ```json
 {
@@ -75,6 +75,11 @@ You have to configure the output topic name, the qos profile if necessary, other
             "name_in": "image_raw", // doesn't really matter
             "name_out": "image", // output image topic name
             "type": "sensor_msgs/msg/Image",
+            "image_spec": {
+                "width": 640,
+                "height": 480,
+                "frame_rate": 30
+            },
             "qos": {
                 "depth": 10,
                 "history": 1,       // KeepLast
