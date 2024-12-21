@@ -39,11 +39,14 @@ func InitROSChannel(
 				node,
 				"/"+cfg.Topics[i].NameIn,
 				&rclgo.SubscriptionOptions{
-					Qos: rclgo.QosProfile{
-						History: rclgo.HistoryKeepLast,
-						Reliability: rclgo.ReliabilityBestEffort,
-						Durability: rclgo.DurabilityVolatile,
-					},
+					Qos: *(topic.Qos),
+					// Qos: rclgo.QosProfile{
+					// 	Depth:       10,
+					// 	History:     rclgo.HistoryKeepLast,
+					// 	Reliability: rclgo.ReliabilityBestEffort,
+					// 	Durability:  rclgo.DurabilityVolatile,
+					// 	Liveliness:  rclgo.LivelinessAutomatic,
+					// },
 				},
 				func(msg *sensor_msgs_msg.Image, info *rclgo.MessageInfo, err error) {
 					slog.Info("aaaaaaaaa", "width", msg.Width, "height", msg.Height)

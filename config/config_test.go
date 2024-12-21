@@ -2,6 +2,8 @@ package config
 
 import (
 	"testing"
+	"github.com/tiiuae/rclgo/pkg/rclgo"
+
 )
 
 func TestCheckfunc(t *testing.T) {
@@ -14,6 +16,51 @@ func TestCheckfunc(t *testing.T) {
 			name: "valid config",
 			cfg: &Config{
 				Mode: "receiver",
+				Addr: "localhost:8080",
+				Topics: []TopicConfig{
+					{
+						NameIn:  "image_raw",
+						NameOut: "image",
+						Type:    "sensor_msgs/msg/Image",
+						ImgSpec: ImageSpecifications{
+							Width:     640,
+							Height:    480,
+							FrameRate: 29.97,
+						},
+						Qos: &rclgo.QosProfile{
+							History:   rclgo.HistoryKeepLast,
+							Reliability: rclgo.ReliabilityBestEffort,
+							Durability: rclgo.DurabilityVolatile,
+						},
+					},
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "invalid config without qos",
+			cfg: &Config{
+				Mode: "receiver",
+				Addr: "localhost:8080",
+				Topics: []TopicConfig{
+					{
+						NameIn:  "image_raw",
+						NameOut: "image",
+						Type:    "sensor_msgs/msg/Image",
+						ImgSpec: ImageSpecifications{
+							Width:     640,
+							Height:    480,
+							FrameRate: 29.97,
+						},
+					},
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "valid config",
+			cfg: &Config{
+				Mode: "sender",
 				Addr: "10.3.9.3:8080",
 				Topics: []TopicConfig{
 					{
@@ -41,9 +88,9 @@ func TestCheckfunc(t *testing.T) {
 			expected: true,
 		},
 		{
-			name: "valid config with hostname",
+			name: "invalid config with wrong imgspec",
 			cfg: &Config{
-				Mode: "receiver",
+				Mode: "sender",
 				Addr: "localhost:8080",
 				Topics: []TopicConfig{
 					{
@@ -63,7 +110,7 @@ func TestCheckfunc(t *testing.T) {
 		{
 			name: "valid config",
 			cfg: &Config{
-				Mode: "receiver",
+				Mode: "sender",
 				Addr: "localhost:8080",
 				Topics: []TopicConfig{
 					{
