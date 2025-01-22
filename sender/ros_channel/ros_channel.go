@@ -49,7 +49,6 @@ func InitROSChannel(
 					// },
 				},
 				func(msg *sensor_msgs_msg.Image, info *rclgo.MessageInfo, err error) {
-					slog.Info("aaaaaaaaa", "width", msg.Width, "height", msg.Height)
 					messageChan <- msg
 				},
 			)
