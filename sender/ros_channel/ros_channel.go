@@ -38,7 +38,16 @@ func InitROSChannel(
 			imgSub, err := sensor_msgs_msg.NewImageSubscription(
 				node,
 				"/"+cfg.Topics[i].NameIn,
-				nil,
+				&rclgo.SubscriptionOptions{
+					Qos: *(topic.Qos),
+					// Qos: rclgo.QosProfile{
+					// 	Depth:       10,
+					// 	History:     rclgo.HistoryKeepLast,
+					// 	Reliability: rclgo.ReliabilityBestEffort,
+					// 	Durability:  rclgo.DurabilityVolatile,
+					// 	Liveliness:  rclgo.LivelinessAutomatic,
+					// },
+				},
 				func(msg *sensor_msgs_msg.Image, info *rclgo.MessageInfo, err error) {
 					messageChan <- msg
 				},

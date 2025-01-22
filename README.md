@@ -34,6 +34,10 @@ the config is load from a json file specified by `wrb <path_to.json>`.
 
 ### Sender
 
+Firstly, if you're going to accept a image topic, you'd better to specify the img specification just like the following, otherwise we will use default img specification.
+
+Secondly, you can configure the input topic name, the qos profile if necessary, otherwise we will use default qos profile like the following.
+
 ```json
 {
     "mode": "sender",
@@ -42,13 +46,25 @@ the config is load from a json file specified by `wrb <path_to.json>`.
         {
             "name_in": "image_raw", // input image topic name
             "name_out": "image_out", // doesn't really matter
-            "type": "sensor_msgs/msg/Image"
+            "type": "sensor_msgs/msg/Image",
+            "image_spec": {
+                "width": 640,
+                "height": 480,
+                "frame_rate": 30
+            },
+            "qos": {
+                "depth": 10,
+                "history": 1,       // KeepLast
+                "reliability": 2    // BestEffort
+            }
         }
     ]
 }
 ```
 
 ### Receiver
+
+Like the sender.
 
 ```json
 {
@@ -58,11 +74,25 @@ the config is load from a json file specified by `wrb <path_to.json>`.
         {
             "name_in": "image_raw", // doesn't really matter
             "name_out": "image", // output image topic name
-            "type": "sensor_msgs/msg/Image"
+            "type": "sensor_msgs/msg/Image",
+            "image_spec": {
+                "width": 640,
+                "height": 480,
+                "frame_rate": 30
+            },
+            "qos": {
+                "depth": 10,
+                "history": 1,       // KeepLast
+                "reliability": 2    // BestEffort
+            }
         }
     ]
 }
 ```
+
+### Ros QosProfile
+
+You can look up the official code for QosProfile. `https://github.com/tiiuae/rclgo/blob/main/pkg/rclgo/qos.go`
 
 ## Acknowledgment
 

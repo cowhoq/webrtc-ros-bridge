@@ -13,18 +13,21 @@ import (
 	"strings"
 
 	"github.com/3DRX/webrtc-ros-bridge/consts"
+	"github.com/tiiuae/rclgo/pkg/rclgo"
 )
 
+
 type ImageSpecifications struct {
-	Width      int      `json:"Width"`
-	Height     int      `json:"Height"`
-	FrameRate  float64  `json:"FrameRate"`
+	Width      int      `json:"width"`
+	Height     int      `json:"height"`
+	FrameRate  float64  `json:"frame_rate"`
 }
 type TopicConfig struct {
 	NameIn  string              `json:"name_in"`
 	NameOut string              `json:"name_out"`
 	Type    string              `json:"type"`       // only "sensor_msgs/msg/Image" is supported
 	ImgSpec ImageSpecifications `json:"image_spec"` // only valid when type is "Image"
+	Qos     *rclgo.QosProfile   `json:"qos"`
 }
 
 type Config struct {
@@ -110,6 +113,13 @@ func isValidHostname(host string) bool {
 	return true
 }
 
+func isValidQosProfile(qos *rclgo.QosProfile) bool {
+	return qos != nil && 
+			(qos.History >= 0 && qos.History <= 3) &&
+		    (qos.Reliability >= 0 && qos.Reliability <= 3) && 
+		    (qos.Durability >= 0 && qos.Durability <= 3)
+}
+
 func checkCfg(c *Config) error {
 	if !(c.Mode == "sender" || c.Mode == "receiver") {
 		return fmt.Errorf("wrong Mode syntax, expected \"sender\" or \"receiver\", but find \"" + c.Mode + "\"")
@@ -132,6 +142,9 @@ func checkCfg(c *Config) error {
 		default:
 			return fmt.Errorf("unsupported topic type: \"" + topic.Type + "\"")
 		}
+		if !isValidQosProfile(topic.Qos) {
+			return fmt.Errorf("invalid qos profile")
+		}
 	}
 	return nil
 }
@@ -149,13 +162,18 @@ func LoadCfg() *Config {
 			Addr: "localhost:8080",
 			Topics: []TopicConfig{
 				{
-					NameIn:  "image_raw",
+					NameIn:  "image",
 					NameOut: "image",
 					Type:    "sensor_msgs/msg/Image",
 					ImgSpec: ImageSpecifications{
-						Width:     1920,
-						Height:    1080,
+						Width:     640,
+						Height:    480,
 						FrameRate: 30,
+					},
+					Qos: &rclgo.QosProfile{
+						History: rclgo.HistoryKeepLast,
+						Reliability: rclgo.ReliabilityBestEffort,
+						Durability: rclgo.DurabilityVolatile,
 					},
 				},
 			},
