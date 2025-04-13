@@ -1,6 +1,7 @@
 package peerconnectionchannel
 
 /*
+#cgo CFLAGS: -I/opt/ros/humble/include -I/opt/ros/humble/include/sensor_msgs
 #cgo LDFLAGS: -L. -lvp8decoder -lvpx -lm
 #include "vp8_decoder.h"
 */

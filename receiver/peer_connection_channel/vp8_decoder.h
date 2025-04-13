@@ -1,7 +1,7 @@
 #ifndef VP8_DECODER_H_
 #define VP8_DECODER_H_
 
-#include <sensor_msgs/msg/image.h>
+#include <sensor_msgs/msg/detail/image__struct.h>
 #include <vpx/vp8.h>
 #include <vpx/vp8dx.h>
 #include <vpx/vpx_decoder.h>

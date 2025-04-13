@@ -39,11 +39,11 @@ void vpx_to_ros_image(const vpx_image_t *vpx_img,
   ros_img->width = vpx_img->d_w;
   ros_img->height = vpx_img->d_h;
 
-  // Set encoding to bgr8 since we'll convert to BGR
+  // Set encoding to rgb8 since we're converting to RGB
   rosidl_runtime_c__String__init(&ros_img->encoding);
-  rosidl_runtime_c__String__assign(&ros_img->encoding, "bgr8");
+  rosidl_runtime_c__String__assign(&ros_img->encoding, "rgb8");
 
-  // Set step (3 bytes per pixel for BGR)
+  // Set step (3 bytes per pixel for RGB)
   ros_img->step = ros_img->width * 3;
 
   // Allocate data array
@@ -66,10 +66,10 @@ void vpx_to_ros_image(const vpx_image_t *vpx_img,
       int U = vpx_img->planes[VPX_PLANE_U][u_idx] - 128;
       int V = vpx_img->planes[VPX_PLANE_V][v_idx] - 128;
 
-      // YUV to RGB conversion
-      int R = Y + (1.403 * V);
-      int G = Y - (0.344 * U) - (0.714 * V);
-      int B = Y + (1.770 * U);
+      // YUV to RGB conversion using standard conversion formula
+      int R = Y + 1.402 * V;
+      int G = Y - 0.34414 * U - 0.71414 * V;
+      int B = Y + 1.772 * U;
 
       // Clamp values to [0, 255]
       R = R < 0 ? 0 : (R > 255 ? 255 : R);
@@ -78,9 +78,9 @@ void vpx_to_ros_image(const vpx_image_t *vpx_img,
 
       // Write to destination in RGB order
       int dest_idx = (y * ros_img->width + x) * 3;
-      seq->data[dest_idx + 0] = (unsigned char)R;
-      seq->data[dest_idx + 1] = (unsigned char)G;
-      seq->data[dest_idx + 2] = (unsigned char)B;
+      seq->data[dest_idx + 0] = (unsigned char)R;  // R
+      seq->data[dest_idx + 1] = (unsigned char)G;  // G
+      seq->data[dest_idx + 2] = (unsigned char)B;  // B
     }
   }
 }
