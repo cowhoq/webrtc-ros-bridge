@@ -1,0 +1,72 @@
+{
+    "mode": "receiver",
+    "addr": "localhost:8080",
+    "topics": [
+        {
+            "name_in": "velocity_status",
+            "name_out": "remote/vehicle/status/velocity_status",
+            "type": "autoware_vehicle_msgs/msg/VelocityReport",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        },
+        {
+            "name_in": "steering_status",
+            "name_out": "remote/vehicle/status/steering_status",
+            "type": "autoware_vehicle_msgs/msg/SteeringReport",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        },
+        {
+            "name_in": "gear_status",
+            "name_out": "remote/vehicle/status/gear_status",
+            "type": "autoware_vehicle_msgs/msg/GearReport",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        },
+        {
+            "name_in": "control_mode",
+            "name_out": "remote/vehicle/status/control_mode",
+            "type": "autoware_vehicle_msgs/msg/ControlModeReport",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        },
+        {
+            "name_in": "trajectory",
+            "name_out": "remote/planning/trajectory",
+            "type": "autoware_planning_msgs/msg/Trajectory",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        },
+        {
+            "name_in": "control_cmd",
+            "name_out": "remote/control/command/control_cmd",
+            "type": "autoware_control_msgs/msg/Control",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        }
+    ]
+} 

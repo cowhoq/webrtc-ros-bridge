@@ -24,6 +24,112 @@ make
 For editor use, it's better to `source ./cgo-flags.env`
 before opening editor for language server to work.
 
+## Autoware Integration
+
+This project now supports Autoware message types for remote monitoring and control of autonomous vehicles. The following message types are supported:
+
+- `autoware_control_msgs/msg/Control`
+- `autoware_planning_msgs/msg/Trajectory`
+- `autoware_vehicle_msgs/msg/ControlModeReport`
+- `autoware_vehicle_msgs/msg/VelocityReport`
+- `autoware_vehicle_msgs/msg/SteeringReport`
+- `autoware_vehicle_msgs/msg/GearReport`
+
+### Generate Autoware Message Bindings
+
+Before using Autoware message types, you need to generate the Go bindings:
+
+```
+./scripts/generate_autoware_interfaces.sh
+```
+
+### Example Autoware Configurations
+
+For your convenience, we've provided example configurations for both sender and receiver:
+
+- `example_autoware_sender.json` - Configuration for the sender node that forwards Autoware messages
+- `example_autoware_receiver.json` - Configuration for the receiver node that receives Autoware messages
+
+To use these configurations:
+
+```bash
+# On the Autoware vehicle or simulation machine
+./wrb example_autoware_sender.json
+
+# On the remote monitoring machine
+./wrb example_autoware_receiver.json
+```
+
+Make sure to adjust the `addr` field in both configurations to match your network setup.
+
+### Example Sender Configuration for Autoware
+
+Here's an example configuration for setting up a sender that forwards Autoware vehicle status messages:
+
+```json
+{
+    "mode": "sender",
+    "addr": "192.168.1.100:8080",
+    "topics": [
+        {
+            "name_in": "vehicle/status/velocity_status", 
+            "name_out": "velocity_status",
+            "type": "autoware_vehicle_msgs/msg/VelocityReport",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        },
+        {
+            "name_in": "planning/trajectory", 
+            "name_out": "trajectory",
+            "type": "autoware_planning_msgs/msg/Trajectory",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        }
+    ]
+}
+```
+
+### Example Receiver Configuration for Autoware
+
+```json
+{
+    "mode": "receiver",
+    "addr": "192.168.1.100:8080",
+    "topics": [
+        {
+            "name_in": "velocity_status", 
+            "name_out": "remote/vehicle/status/velocity_status",
+            "type": "autoware_vehicle_msgs/msg/VelocityReport",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        },
+        {
+            "name_in": "trajectory", 
+            "name_out": "remote/planning/trajectory",
+            "type": "autoware_planning_msgs/msg/Trajectory",
+            "qos": {
+                "depth": 10,
+                "history": 1,
+                "reliability": 1,
+                "durability": 2
+            }
+        }
+    ]
+}
+```
+
 ## Run
 
 `wrb` cli can be configured to be either the sender or the receiver,
@@ -101,3 +207,4 @@ You can look up the official code for QosProfile. `https://github.com/tiiuae/rcl
 Infact, the receiver of this project is compatable with webrtc_ros server node.
 - [ros2](https://github.com/ros2)
 - [tiiuae/rclgo](https://github.com/tiiuae/rclgo). The ROS client library for golang.
+- [Autoware](https://github.com/autowarefoundation/autoware). The open-source autonomous driving stack.
