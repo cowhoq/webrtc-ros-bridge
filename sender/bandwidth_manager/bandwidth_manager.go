@@ -43,6 +43,11 @@ type BandwidthManagerConfig struct {
 	QualityAdjustSensitivity float64
 }
 
+// VP8Encoder接口定义了VP8编码器需要提供的方法
+type VP8Encoder interface {
+	SetBitRate(bitRate int) error
+}
+
 // BandwidthManager dynamically allocates bandwidth between video and data channels
 // to provide optimal quality of service based on current usage patterns
 type BandwidthManager struct {
@@ -217,8 +222,10 @@ func (bm *BandwidthManager) adjustBandwidth() {
 			"dataUsage", dataBandwidthUsage,
 			"totalBandwidth", bm.config.TotalBandwidth)
 
-		// TODO: Implement actual bitrate adjustment for the VP8 encoder
-		// This would depend on the specific encoder implementation
+		// 应用比特率调整到编码器
+		if err := bm.UpdateEncoderBitrate(newVideoBitrate); err != nil {
+			slog.Error("Failed to update encoder bitrate", "error", err)
+		}
 	}
 }
 
@@ -235,4 +242,18 @@ func (bm *BandwidthManager) SetInitialVideoBitrate(bitrate int) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
 	bm.currentVideoBitrate = bitrate
+}
+
+// UpdateEncoderBitrate尝试更新编码器的比特率
+func (bm *BandwidthManager) UpdateEncoderBitrate(bitrate int) error {
+	if bm.videoEncoder == nil {
+		return nil // 没有注册编码器，忽略
+	}
+
+	// 尝试将编码器转换为VP8Encoder接口
+	if vpxEncoder, ok := bm.videoEncoder.(VP8Encoder); ok {
+		return vpxEncoder.SetBitRate(bitrate)
+	}
+
+	return nil // 不支持的编码器类型，忽略
 }

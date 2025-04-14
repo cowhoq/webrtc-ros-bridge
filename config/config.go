@@ -16,11 +16,10 @@ import (
 	"github.com/tiiuae/rclgo/pkg/rclgo"
 )
 
-
 type ImageSpecifications struct {
-	Width      int      `json:"width"`
-	Height     int      `json:"height"`
-	FrameRate  float64  `json:"frame_rate"`
+	Width     int     `json:"width"`
+	Height    int     `json:"height"`
+	FrameRate float64 `json:"frame_rate"`
 }
 type TopicConfig struct {
 	NameIn  string              `json:"name_in"`
@@ -114,10 +113,10 @@ func isValidHostname(host string) bool {
 }
 
 func isValidQosProfile(qos *rclgo.QosProfile) bool {
-	return qos != nil && 
-			(qos.History >= 0 && qos.History <= 3) &&
-		    (qos.Reliability >= 0 && qos.Reliability <= 3) && 
-		    (qos.Durability >= 0 && qos.Durability <= 3)
+	return qos != nil &&
+		(qos.History >= 0 && qos.History <= 3) &&
+		(qos.Reliability >= 0 && qos.Reliability <= 3) &&
+		(qos.Durability >= 0 && qos.Durability <= 3)
 }
 
 func checkCfg(c *Config) error {
@@ -139,6 +138,10 @@ func checkCfg(c *Config) error {
 			}
 		case consts.MSG_LASER_SCAN:
 			// check passed
+		case consts.MSG_CONTROL_CMD, consts.MSG_TRAJECTORY, consts.MSG_CONTROL_MODE,
+			consts.MSG_VELOCITY, consts.MSG_STEERING, consts.MSG_GEAR,
+			consts.MSG_KINEMATIC, consts.MSG_POSE_COV:
+			// 这些消息类型都是有效的，检查通过
 		default:
 			return fmt.Errorf("unsupported topic type: \"" + topic.Type + "\"")
 		}
@@ -171,9 +174,9 @@ func LoadCfg() *Config {
 						FrameRate: 30,
 					},
 					Qos: &rclgo.QosProfile{
-						History: rclgo.HistoryKeepLast,
+						History:     rclgo.HistoryKeepLast,
 						Reliability: rclgo.ReliabilityBestEffort,
-						Durability: rclgo.DurabilityVolatile,
+						Durability:  rclgo.DurabilityVolatile,
 					},
 				},
 			},

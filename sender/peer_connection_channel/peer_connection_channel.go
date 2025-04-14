@@ -5,8 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"reflect"
 
 	"github.com/3DRX/webrtc-ros-bridge/config"
+	"github.com/3DRX/webrtc-ros-bridge/consts"
+	control_msgs "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/autoware_control_msgs/msg"
+	planning_msgs "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/autoware_planning_msgs/msg"
+	vehicle_msgs "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/autoware_vehicle_msgs/msg"
+	geom_msgs "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/geometry_msgs/msg"
+	nav_msgs "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/nav_msgs/msg"
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
 	rosmediadevicesadapter "github.com/3DRX/webrtc-ros-bridge/ros_mediadevices_adapter"
 	bandwidthmanager "github.com/3DRX/webrtc-ros-bridge/sender/bandwidth_manager"
@@ -19,6 +26,27 @@ import (
 	"github.com/tiiuae/rclgo/pkg/rclgo"
 	"github.com/tiiuae/rclgo/pkg/rclgo/types"
 )
+
+// 添加消息类型标识的常量
+const TypeHeaderSize = 32 // 固定32字节的消息类型头
+
+// addTypeHeader 添加消息类型标识前缀
+func addTypeHeader(msgType string, data []byte) []byte {
+	// 创建一个新的字节数组，包含类型头和原始数据
+	result := make([]byte, TypeHeaderSize+len(data))
+
+	// 填充类型头 - 固定长度以便接收端解析
+	typeBytes := []byte(msgType)
+	if len(typeBytes) > TypeHeaderSize {
+		typeBytes = typeBytes[:TypeHeaderSize] // 截断过长的类型
+	}
+
+	// 复制类型头和数据
+	copy(result[:TypeHeaderSize], typeBytes)
+	copy(result[TypeHeaderSize:], data)
+
+	return result
+}
 
 type AddStreamAction struct {
 	Type string `json:"type"`
@@ -43,6 +71,17 @@ type PeerConnectionChannel struct {
 	peerConnection    *webrtc.PeerConnection
 	bandwidthManager  *bandwidthmanager.BandwidthManager
 	vp8Params         vpx.VP8Params
+}
+
+// VP8EncoderWrapper 包装VP8Params以实现bandwidth_manager.VP8Encoder接口
+type VP8EncoderWrapper struct {
+	params *vpx.VP8Params
+}
+
+// SetBitRate 实现bandwidth_manager.VP8Encoder接口
+func (w *VP8EncoderWrapper) SetBitRate(bitRate int) error {
+	w.params.BitRate = bitRate
+	return nil
 }
 
 func InitPeerConnectionChannel(
@@ -106,8 +145,14 @@ func InitPeerConnectionChannel(
 	// 设置初始视频比特率
 	vp8Params.BitRate = 5_000_000 // 使用固定值作为初始比特率
 
+	// 创建VP8编码器包装器
+	vpxEncoder := &VP8EncoderWrapper{params: &vp8Params}
+
 	// 更新带宽管理器初始比特率设置
-	bwManager.SetInitialVideoBitrate(int(vp8Params.BitRate))
+	bwManager.SetInitialVideoBitrate(vp8Params.BitRate)
+
+	// 将编码器注册到带宽管理器
+	bwManager.SetVideoEncoder(vpxEncoder)
 
 	codecselector := mediadevices.NewCodecSelector(
 		mediadevices.WithVideoEncoders(&vp8Params),
@@ -222,7 +267,12 @@ func (pc *PeerConnectionChannel) Spin() {
 			msgType := getMsgType(sensorMsg)
 			pc.bandwidthManager.RegisterMessageTraffic(msgType, len(serializedMsg))
 
-			datachannel.Send(serializedMsg)
+			// 获取消息的ROS类型名称
+			rosTypeName := getROSTypeName(sensorMsg)
+
+			// 添加类型标识并发送
+			enhancedMsg := addTypeHeader(rosTypeName, serializedMsg)
+			datachannel.Send(enhancedMsg)
 		}
 	})
 	datachannel.OnMessage(func(msg webrtc.DataChannelMessage) {
@@ -279,4 +329,37 @@ func checkImgSpec(cfg *config.Config) [2]int {
 func getMsgType(msg types.Message) string {
 	// 简单地使用类型名称作为标识
 	return fmt.Sprintf("%T", msg)
+}
+
+// getROSTypeName 返回消息的ROS类型名称
+func getROSTypeName(msg types.Message) string {
+	// 根据类型指针获取类型名称
+	t := reflect.TypeOf(msg)
+
+	// 先判断常见类型
+	switch msg.(type) {
+	case *sensor_msgs_msg.Image:
+		return consts.MSG_IMAGE
+	case *sensor_msgs_msg.LaserScan:
+		return consts.MSG_LASER_SCAN
+	case *nav_msgs.Odometry:
+		return consts.MSG_KINEMATIC
+	case *geom_msgs.PoseWithCovarianceStamped:
+		return consts.MSG_POSE_COV
+	case *control_msgs.Control:
+		return consts.MSG_CONTROL_CMD
+	case *planning_msgs.Trajectory:
+		return consts.MSG_TRAJECTORY
+	case *vehicle_msgs.ControlModeReport:
+		return consts.MSG_CONTROL_MODE
+	case *vehicle_msgs.VelocityReport:
+		return consts.MSG_VELOCITY
+	case *vehicle_msgs.SteeringReport:
+		return consts.MSG_STEERING
+	case *vehicle_msgs.GearReport:
+		return consts.MSG_GEAR
+	}
+
+	// 如果找不到匹配的类型，返回类型的全名
+	return t.String()
 }
