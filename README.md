@@ -24,7 +24,9 @@ make
 For editor use, it's better to `source ./cgo-flags.env`
 before opening editor for language server to work.
 
-## Autoware Integration
+## Features
+
+### Autoware Integration
 
 This project now supports Autoware message types for remote monitoring and control of autonomous vehicles. The following message types are supported:
 
@@ -34,6 +36,21 @@ This project now supports Autoware message types for remote monitoring and contr
 - `autoware_vehicle_msgs/msg/VelocityReport`
 - `autoware_vehicle_msgs/msg/SteeringReport`
 - `autoware_vehicle_msgs/msg/GearReport`
+
+[详细文档](./docs/autoware_integration.md)
+
+### Adaptive Bandwidth Management
+
+The WebRTC-ROS bridge implements an intelligent bandwidth management system that dynamically allocates bandwidth between video streams and ROS message data channels. This system optimizes both visual quality and control responsiveness based on real-time network conditions and traffic patterns.
+
+Key benefits:
+
+- Prioritizes critical control messages in bandwidth-constrained environments
+- Dynamically adjusts video quality to utilize available bandwidth efficiently
+- Provides smooth quality transitions through advanced filtering algorithms
+- Ensures robust operation across various network conditions
+
+[详细文档](./docs/adaptive_bandwidth_management.md)
 
 ### Generate Autoware Message Bindings
 

@@ -3,10 +3,13 @@ package peerconnectionchannel
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+
 	"github.com/3DRX/webrtc-ros-bridge/config"
 	sensor_msgs_msg "github.com/3DRX/webrtc-ros-bridge/rclgo_gen/sensor_msgs/msg"
 	rosmediadevicesadapter "github.com/3DRX/webrtc-ros-bridge/ros_mediadevices_adapter"
+	bandwidthmanager "github.com/3DRX/webrtc-ros-bridge/sender/bandwidth_manager"
 	send_signalingchannel "github.com/3DRX/webrtc-ros-bridge/sender/signaling_channel"
 	"github.com/pion/interceptor"
 	"github.com/pion/mediadevices"
@@ -38,6 +41,8 @@ type PeerConnectionChannel struct {
 	sendCandidateChan chan<- webrtc.ICECandidateInit
 	recvCandidateChan <-chan webrtc.ICECandidateInit
 	peerConnection    *webrtc.PeerConnection
+	bandwidthManager  *bandwidthmanager.BandwidthManager
+	vp8Params         vpx.VP8Params
 }
 
 func InitPeerConnectionChannel(
@@ -77,7 +82,7 @@ func InitPeerConnectionChannel(
 	sensorChan := make(chan types.Message, 10)
 	var imgWidth, imgHeight int = 640, 480
 	var frameRate float64 = 30.00
-	if imgSpec.Width != 0 && imgSpec.Height != 0  && imgSpec.FrameRate != 0 {
+	if imgSpec.Width != 0 && imgSpec.Height != 0 && imgSpec.FrameRate != 0 {
 		imgWidth = imgSpec.Width
 		imgHeight = imgSpec.Height
 		frameRate = imgSpec.FrameRate
@@ -88,7 +93,22 @@ func InitPeerConnectionChannel(
 	if err != nil {
 		panic(err)
 	}
-	vp8Params.BitRate = 5_000_000
+
+	// 初始化带宽管理器
+	bwManager := bandwidthmanager.NewBandwidthManager(bandwidthmanager.BandwidthManagerConfig{
+		TotalBandwidth:          10_000_000, // 10 Mbps
+		MinVideoBitrate:         500_000,    // 500 Kbps
+		MaxVideoBitrate:         8_000_000,  // 8 Mbps
+		TargetVideoBitrate:      5_000_000,  // 5 Mbps
+		MinDataChannelBandwidth: 500_000,    // 500 Kbps
+	})
+
+	// 设置初始视频比特率
+	vp8Params.BitRate = 5_000_000 // 使用固定值作为初始比特率
+
+	// 更新带宽管理器初始比特率设置
+	bwManager.SetInitialVideoBitrate(int(vp8Params.BitRate))
+
 	codecselector := mediadevices.NewCodecSelector(
 		mediadevices.WithVideoEncoders(&vp8Params),
 	)
@@ -147,6 +167,8 @@ func InitPeerConnectionChannel(
 		peerConnection:    peerConnection,
 		imgChan:           imgChan,
 		sensorChan:        sensorChan,
+		bandwidthManager:  bwManager,
+		vp8Params:         vp8Params,
 		chanDispatcher: func() {
 			for {
 				msg := <-messageChan
@@ -174,10 +196,18 @@ func (pc *PeerConnectionChannel) handleRemoteICECandidate() {
 func (pc *PeerConnectionChannel) Spin() {
 	go pc.chanDispatcher()
 
+	// 启动带宽管理器
+	pc.bandwidthManager.Start()
+	defer pc.bandwidthManager.Stop()
+
 	datachannel, err := pc.peerConnection.CreateDataChannel("data", nil)
 	if err != nil {
 		panic(err)
 	}
+
+	// 将数据通道注册到带宽管理器
+	pc.bandwidthManager.SetDataChannel(datachannel)
+
 	datachannel.OnOpen(func() {
 		slog.Info("datachannel open", "label", datachannel.Label(), "ID", datachannel.ID())
 		for {
@@ -187,6 +217,11 @@ func (pc *PeerConnectionChannel) Spin() {
 				slog.Error("failed to serialize sensor message", "error", err)
 				continue
 			}
+
+			// 向带宽管理器报告数据使用情况
+			msgType := getMsgType(sensorMsg)
+			pc.bandwidthManager.RegisterMessageTraffic(msgType, len(serializedMsg))
+
 			datachannel.Send(serializedMsg)
 		}
 	})
@@ -230,7 +265,7 @@ func checkImgSpec(cfg *config.Config) [2]int {
 	tmp := cfg.Topics[0].ImgSpec
 
 	width, height := 640, 480
-	if tmp.Width != 0 && tmp.Height!= 0 {
+	if tmp.Width != 0 && tmp.Height != 0 {
 		width = tmp.Width
 		height = tmp.Height
 	}
@@ -238,4 +273,10 @@ func checkImgSpec(cfg *config.Config) [2]int {
 		width,
 		height,
 	}
+}
+
+// getMsgType 返回消息的类型名称
+func getMsgType(msg types.Message) string {
+	// 简单地使用类型名称作为标识
+	return fmt.Sprintf("%T", msg)
 }
